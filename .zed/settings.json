@@ -1,0 +1,10 @@
+{
+  "terminal": {
+    "detect_venv": {
+      "on": {
+        "directories": ["venv", "venv310"],
+        "activate_script": "default"
+      }
+    }
+  }
+}

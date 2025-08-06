@@ -1,0 +1,27 @@
+###############################################################################
+# Core framework
+###############################################################################
+fastapi[standard]==0.116.1          # 2025-07-11
+uvicorn[standard]==0.35.0           # ASGI server with reload & extras
+
+###############################################################################
+# Async ORM  +  PostgreSQL  +  migrations
+###############################################################################
+tortoise-orm[asyncpg]==0.25.1       # latest 0.25 line (works on Py 3.9-3.12)
+asyncpg==0.30.0                     # PostgreSQL driver
+aerich==0.9.1                       # schema migrations for Tortoise ≥0.25
+
+###############################################################################
+# Auth / crypto  (roll-your-own or use fastapi-auth¹)
+###############################################################################
+python-jose[cryptography]==3.3.0    # JWT encode/decode
+argon2-cffi==25.1.0                 # modern password hashing
+passlib[bcrypt]==1.7.4              # verify legacy bcrypt hashes
+httpx-oauth==0.16.1                 # Google / GitHub OAuth flows
+
+###############################################################################
+# Settings & environment
+###############################################################################
+pydantic==2.11.1
+pydantic-settings==2.2.1            # companion package for BaseSettings
+python-dotenv==1.1.1
