@@ -301,3 +301,4 @@ conf
 helper.py
 
 venv310
+.zed/
