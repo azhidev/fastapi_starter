@@ -16,6 +16,7 @@ dictdiffer==0.9.0
 dnspython==2.7.0
 ecdsa==0.19.1
 email_validator==2.2.0
+epyxid==0.3.3
 exceptiongroup==1.3.0
 fastapi==0.116.1
 fastapi-cli==0.0.8
