@@ -1,0 +1,16 @@
+name: cl_ar_postgres
+
+services:
+  db:
+    image: postgres:17
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      # Persist data across restarts
+      - db-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+volumes:
+  db-data:

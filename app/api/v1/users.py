@@ -45,6 +45,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
 
 # PRIVATE: register (no decorator → private by default)
 @_auth.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@public
 async def register(payload: UserCreateExtra):
     hashed = pwd_context.hash(payload.password)
     user_data = payload.model_dump()

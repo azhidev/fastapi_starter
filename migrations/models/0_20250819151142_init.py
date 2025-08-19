@@ -14,7 +14,7 @@ async def upgrade(db: BaseDBAsyncClient) -> str:
 CREATE INDEX IF NOT EXISTS "idx_user_usernam_9987ab" ON "user" ("username");
 CREATE INDEX IF NOT EXISTS "idx_user_email_1b4f1c" ON "user" ("email");
 CREATE TABLE IF NOT EXISTS "oauthaccount" (
-    "id" VARCHAR(20) NOT NULL PRIMARY KEY DEFAULT 'd2i83h7297k9gapohmt0',
+    "id" VARCHAR(20) NOT NULL PRIMARY KEY DEFAULT 'd2i98bjndlt077cakvjg',
     "provider" VARCHAR(50) NOT NULL,
     "subject" VARCHAR(255) NOT NULL,
     "access_token" TEXT NOT NULL,
