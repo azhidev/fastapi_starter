@@ -1,10 +1,11 @@
 import uuid
 from tortoise import models, fields
 from app.models.user import User
+from epyxid import XID
 
 
 class OAuthAccount(models.Model):
-    id = fields.UUIDField(pk=True, default=uuid.uuid4)
+    id = fields.CharField(20, pk=True, default=str(XID()))
     provider = fields.CharField(50)  # e.g. "google"
     subject = fields.CharField(255)  # provider user id
     user = fields.ForeignKeyField("models.User", related_name="oauth_accounts")
