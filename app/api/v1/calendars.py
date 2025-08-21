@@ -109,13 +109,9 @@ def _parse_iso(d: str) -> date:
 def get_lunar_range(
     start: str = Query(..., description="Start date in YYYY-MM-DD"),
     end: str = Query(..., description="End date in YYYY-MM-DD"),
-    include_missing: bool = Query(False, description="Include placeholders for dates that aren't in the files"),
+    # include_missing: bool = Query(False, description="Include placeholders for dates that aren't in the files"),
+    country_shortcode: str = "IQ"
 ):
-    """
-    Example:
-      /lunar?start=2026-01-02&end=2026-01-05
-      /lunar?start=2025-12-30&end=2026-01-03&include_missing=true
-    """
     start_d = _parse_iso(start)
     end_d = _parse_iso(end)
     if start_d > end_d:

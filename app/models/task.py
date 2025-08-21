@@ -1,4 +1,5 @@
 import uuid
+from epyxid import XID
 from tortoise import models, fields
 from app.models.project import Project
 
