@@ -21,6 +21,9 @@ class Province(models.Model):
     label = fields.CharField(255)
     iso_3166_2 = fields.CharField(10, null=True)
     country = fields.ForeignKeyField("models.Country", related_name="provinces")
+    lat = fields.FloatField(null=True)
+    lng = fields.FloatField(null=True)
+    tz = fields.FloatField(null=True)
     created_at = fields.DatetimeField(auto_now_add=True)
 
     class Meta:
