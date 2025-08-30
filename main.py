@@ -11,6 +11,7 @@ import uvicorn, os, logging
 from dotenv import load_dotenv
 from tortoise.contrib.fastapi import register_tortoise
 from app.models.user import User, Role
+from fastapi.middleware.cors import CORSMiddleware
 
 # Public root
 from app.core.security import public  # decorator for convenience
@@ -50,7 +51,15 @@ app = FastAPI(
 )
 
 app.middleware("http")(add_process_time_header)
+origins = ["*"]
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 @app.get("/", tags=["public"])
 @public
