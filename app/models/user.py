@@ -18,8 +18,8 @@ class Role(models.Model):
 
 class User(models.Model):
     id = fields.CharField(20, pk=True, default=lambda: str(XID()))
-    username = fields.CharField(255, unique=True, index=True)
-    email = fields.CharField(255, unique=True, index=True, null=True)
+    username = fields.CharField(255, unique=True,null=True, index=True)
+    email = fields.CharField(255, unique=True, index=True)
     hashed_password = fields.CharField(255)
     is_active = fields.BooleanField(default=True)
     created_at = fields.DatetimeField(auto_now_add=True)
