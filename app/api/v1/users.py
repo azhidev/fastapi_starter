@@ -90,6 +90,11 @@ if oauth_client:
 # ------------ User admin endpoints -----------------------------------------
 
 
+@_users.get("/me", response_model=UserRead)
+async def get_current_user(user: User = Depends(get_current_user)):
+    return await UserRead.from_tortoise_orm(user)
+
+
 @_users.get("/", response_model=list[UserRead])
 async def list_users():
     return await UserRead.from_queryset(User.all())
