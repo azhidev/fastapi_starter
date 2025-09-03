@@ -47,7 +47,7 @@ app = FastAPI(
     version="1.0.0",
     lifespan=lifespan,
     # Global default: private
-    # dependencies=[Depends(user_authentication)],
+    dependencies=[Depends(user_authentication)],
 )
 
 app.middleware("http")(add_process_time_header)
@@ -62,7 +62,6 @@ app.add_middleware(
 )
 
 @app.get("/", tags=["public"])
-@public
 async def root():
     return {"ok": True}
 

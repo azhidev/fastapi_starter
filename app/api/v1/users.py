@@ -1,17 +1,20 @@
 from datetime import timedelta
+from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from httpx_oauth.clients.google import GoogleOAuth2
+from pydantic import BaseModel, ConfigDict, Field
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.exceptions import DoesNotExist
 
 from app.core.config import get_settings
-from app.core.security import create_access_token, get_current_user, public
+from app.core.security import create_access_token, public, require_roles
 from app.models.user import User, Role
 from app.models.oauth import OAuthAccount
-from app.schemas.user import UserCreateExtra, UserRead, UserCreate
+from app.schemas.user import UserCreateExtra, UserRead, UserCreate, UserOut, RoleOut
+from typing import List
 
 settings = get_settings()
 
@@ -28,6 +31,7 @@ RoleCreate = pydantic_model_creator(Role, name="RoleCreate", exclude_readonly=Tr
 # ----- Routers ---------------------------------------------------------------
 _auth = APIRouter(prefix="/auth", tags=["auth"])
 _users = APIRouter(prefix="/users", tags=["users"])
+_admin = APIRouter(prefix="/admin", tags=["admin"])
 _roles = APIRouter(prefix="/roles", tags=["roles"])
 
 
@@ -89,16 +93,20 @@ if oauth_client:
 
 # ------------ User admin endpoints -----------------------------------------
 
-
-@_users.get("/me", response_model=UserRead)
-async def get_current_user(user: User = Depends(get_current_user)):
-    return await UserRead.from_tortoise_orm(user)
-
-
-@_users.get("/", response_model=list[UserRead])
+@_admin.get("/", response_model=list[UserRead],
+            dependencies=[Depends(require_roles("admin"))])
 async def list_users():
     return await UserRead.from_queryset(User.all())
 
+@_users.get("/me", response_model=UserOut)
+async def get_current_user(request: Request):
+    user = await User.get(id=request.state.user.id).prefetch_related("roles")
+    return UserOut(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        roles=[RoleOut(id=r.id, name=r.name, description=r.description) for r in user.roles]
+    )
 
 @_users.get("/{user_id}", response_model=UserRead)
 async def get_user(user_id: str):
@@ -115,8 +123,20 @@ async def assign_role(user_id: str, role_name: str):
         raise HTTPException(404, "User or role not found")
     await user.roles.add(role)
 
+@_users.delete("/{user_id}/roles/{role_name}", status_code=204)
+async def remove_role(user_id: str, role_name: str):
+    user = await User.get_or_none(id=user_id)
+    role = await Role.get_or_none(name=role_name)
+    if not user or not role:
+        raise HTTPException(404, "User or role not found")
+    await user.roles.remove(role)
 
-# ------------ Role CRUD ----------------------------------------------------
+@_users.get("/{user_id}/roles", response_model=list[RoleRead])
+async def list_user_roles(user_id: str):
+    user = await User.get_or_none(id=user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    return await RoleRead.from_queryset(user.roles.all())
 
 
 @_roles.get("/", response_model=list[RoleRead])
@@ -145,3 +165,4 @@ router = APIRouter()
 router.include_router(_auth)
 router.include_router(_users)
 router.include_router(_roles)
+router.include_router(_admin)

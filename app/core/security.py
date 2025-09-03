@@ -28,17 +28,9 @@ def verify_token(token: str) -> Optional[dict[str, Any]]:
     except JWTError:
         return None
 
-
-async def get_current_user(token: Optional[str]) -> User:
-    if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-
+async def _user_from_token(token: str) -> "User":
     payload = verify_token(token)
-    if not payload:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
-
-    user_id: Optional[str] = payload.get("sub")
-    if not user_id:
+    if not payload or not (user_id := payload.get("sub")):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
 
     user = await User.get_or_none(id=user_id)
@@ -47,13 +39,29 @@ async def get_current_user(token: Optional[str]) -> User:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
     return user
 
+# STRICT: raises 401 if token missing/invalid
+async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> "User":
+    if not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return await _user_from_token(token)
+
+# OPTIONAL: returns None if token missing/invalid (useful for public routes / global guard)
+async def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme)) -> Optional["User"]:
+    if not token:
+        return None
+    try:
+        return await _user_from_token(token)
+    except HTTPException:
+        return None
+
+PUBLIC_PATHS = {"/docs", "/openapi.json"}  # your list
 
 # Public paths that should skip auth entirely
-PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
-    {
-        # "/",
-    }
-)
+# PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
+#     {
+#         # "/",
+#     }
+# )
 
 
 def _normalize(path: str) -> str:
@@ -74,35 +82,19 @@ def public(func: Callable[..., Any]) -> Callable[..., Any]:
 # ---- Global dependency -----------------------------------------------------
 async def user_authentication(
     request: Request,
-    token: Optional[str] = Depends(oauth2_scheme),  # oauth2_scheme has auto_error=False (see security.py)
+    maybe_user: Optional["User"] = Depends(get_current_user_optional),
 ) -> None:
-    """
-    Runs for EVERY request (set at `app = FastAPI(dependencies=[Depends(user_authentication)])`).
-    - Skips auth for public paths or handlers marked with @public
-    - Otherwise requires a valid Bearer token
-    - On success, attaches the User to request.state.user
-    """
     path = _normalize(request.url.path)
     endpoint = request.scope.get("endpoint")
     is_public = (path in PUBLIC_PATHS) or bool(getattr(endpoint, "_is_public", False))
 
-    if is_public:
-        # Public route: if a token is present, we *optionally* attach the user,
-        # but we don't fail if it's missing/invalid.
-        return
-    if token:
-        try:
-            user = await get_current_user(token)
-            request.state.user = user
-        except Exception as e:
-            raise HTTPException(400, f"token is invalid: {str(e)}")
+    # attach user if present
+    if maybe_user:
+        request.state.user = maybe_user
 
-    # Private (default): token REQUIRED
-    if not token:
+    # if private, a valid user is required
+    if not is_public and not maybe_user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
-
-    user = await get_current_user(token)
-    request.state.user = user
 
 
 def can(role_name: str):
@@ -118,3 +110,20 @@ def require_active_user(user: User = Depends(get_current_user)) -> User:
     if not getattr(user, "is_active", False):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Inactive user")
     return user
+
+
+def require_roles(*role_names: str, all_: bool = False):
+    """
+    Use as: dependencies=[Depends(require_roles("admin"))]
+    or with all roles required: Depends(require_roles("admin", "manager", all_=True))
+    """
+    async def _dep(current_user: User = Depends(get_current_user)) -> User:
+        ok = await (
+            User.has_all_roles if all_ else User.has_any_role
+        )(current_user.id, *role_names)
+
+        if not ok:
+            raise HTTPException(status_code=403, detail="Forbidden")
+        return current_user
+
+    return _dep
