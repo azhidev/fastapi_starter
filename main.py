@@ -1,28 +1,25 @@
 import asyncio
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
+from fastapi import FastAPI, Depends
 from tortoise import Tortoise
+from app.core.security import user_authentication
+from app.api.middlewares import add_process_time_header
 from app.core.config import get_settings
-from app.db.tortoise import TORTOISE_ORM, init_db
-from app.api.v1 import users, projects, tasks
+from app.db.tortoise import TORTOISE_ORM
+from app.api.v1 import users, projects, tasks, calendars, countries
 import uvicorn, os, logging
 from dotenv import load_dotenv
 from tortoise.contrib.fastapi import register_tortoise
 from app.models.user import User, Role
+from fastapi.middleware.cors import CORSMiddleware
+
+# Public root
+from app.core.security import public  # decorator for convenience
+
 
 load_dotenv()
 
-app = FastAPI(title="FastAPI Example", version="1.0.0")
 settings = get_settings()
-
-# auth = AuthFastAPI(
-#     app,
-#     user_model=User,
-#     role_model=Role,
-#     secret_key=settings.SECRET_KEY,
-#     jwt_algorithm="HS256",
-# )
-# auth.register_routes()
 
 
 @asynccontextmanager
@@ -45,17 +42,36 @@ async def lifespan(app: FastAPI):
     await Tortoise.close_connections()
 
 
+app = FastAPI(
+    title="FastAPI Example",
+    version="1.0.0",
+    lifespan=lifespan,
+    # Global default: private
+    dependencies=[Depends(user_authentication)],
+)
+
+app.middleware("http")(add_process_time_header)
+origins = ["*"]
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/", tags=["public"])
+async def root():
+    return {"ok": True}
+
+
+# Feature routers (their public endpoints will be marked with @public)
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(projects.router, prefix="/api/v1")
-app.include_router(tasks.router, prefix="/api/v1")
-
-
-# register_tortoise(
-#     app,
-#     db_url=settings.database_url,
-#     modules={"models": ["app.models"]},
-#     generate_schemas=True,
-# )
+app.include_router(calendars.router, prefix="/api/v1")
+app.include_router(countries.router, prefix="/api/v1")
+# app.include_router(projects.router, prefix="/api/v1")
+# app.include_router(tasks.router, prefix="/api/v1")
 
 if __name__ == "__main__":
     uvicorn.run(

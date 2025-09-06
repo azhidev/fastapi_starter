@@ -11,7 +11,7 @@ from tortoise.contrib.fastapi import register_tortoise
 from app.core.config import get_settings
 
 settings = get_settings()
-
+# print(str(settings.database_url), "-" * 100)
 # ---------------------------------------------------------------------------
 # Aerich‑compatible configuration dict
 # ---------------------------------------------------------------------------
@@ -22,6 +22,8 @@ TORTOISE_ORM = {
             "models": [
                 "app.models.oauth",
                 "app.models.project",
+                "app.models.country",
+                "app.models.calendar",
                 "app.models.task",
                 "app.models.user",
                 "aerich.models",  # built‑in Aerich migration table
@@ -36,10 +38,10 @@ TORTOISE_ORM = {
 # ---------------------------------------------------------------------------
 
 
-def init_db(app: FastAPI) -> None:
-    register_tortoise(
-        app,
-        config=TORTOISE_ORM,
-        generate_schemas=False,  # migrations handle DDL
-        add_exception_handlers=True,
-    )
+# def init_db(app: FastAPI) -> None:
+#     register_tortoise(
+#         app,
+#         config=TORTOISE_ORM,
+#         generate_schemas=False,  # migrations handle DDL
+#         add_exception_handlers=True,
+#     )

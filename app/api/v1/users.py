@@ -1,59 +1,64 @@
 from datetime import timedelta
-from uuid import UUID
-
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Optional
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from httpx_oauth.clients.google import GoogleOAuth2
+from pydantic import BaseModel, ConfigDict, Field
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.exceptions import DoesNotExist
 
 from app.core.config import get_settings
-from app.core.security import create_access_token
-from app.api.deps import current_active_user, require_role
+from app.core.security import create_access_token, public, require_roles
 from app.models.user import User, Role
 from app.models.oauth import OAuthAccount
-from app.schemas.user import UserRead, UserCreate
+from app.schemas.user import UserCreateExtra, UserRead, UserCreate, UserOut, RoleOut
+from typing import List
 
 settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
-oauth_client: GoogleOAuth2 | None = None
 if settings.google_client_id and settings.google_client_secret:
     oauth_client = GoogleOAuth2(settings.google_client_id, settings.google_client_secret)
 
-# ----- Role schemas generated on‑the‑fly ------------------------------------
+oauth_client: GoogleOAuth2 | None = None
+# ----- Role schemas ----------------------------------------------------------
 RoleRead = pydantic_model_creator(Role, name="RoleRead")
 RoleCreate = pydantic_model_creator(Role, name="RoleCreate", exclude_readonly=True)
 
-# ---------------------------------------------------------------------------
-# Routers
-# ---------------------------------------------------------------------------
+# ----- Routers ---------------------------------------------------------------
 _auth = APIRouter(prefix="/auth", tags=["auth"])
 _users = APIRouter(prefix="/users", tags=["users"])
+_admin = APIRouter(prefix="/admin", tags=["admin"])
 _roles = APIRouter(prefix="/roles", tags=["roles"])
 
-# ------------ Auth endpoints ------------------------------------------------
 
-
-@_auth.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
-async def register(payload: UserCreate):
-    if await User.filter(email=payload.email).exists():
-        raise HTTPException(400, "Email already registered")
-    hashed = pwd_context.hash(payload.hashed_password)
-    user = await User.create(email=payload.email, hashed_password=hashed)
-    return await UserRead.from_tortoise_orm(user)
-
-
+# ------------ Auth endpoints -------------------------------------------------
+# PUBLIC: login
 @_auth.post("/login")
+@public
 async def login(form: OAuth2PasswordRequestForm = Depends()):
-    user = await User.get_or_none(email=form.username)
+    user = await User.get_or_none(username=form.username)
     if not user or not pwd_context.verify(form.password, user.hashed_password):
         raise HTTPException(400, "Incorrect email or password")
-    access = create_access_token({"sub": str(user.id)}, expires_delta=timedelta(minutes=15))
+    access = create_access_token({"sub": str(user.id)}, expires_delta=timedelta(weeks=1))
     return {"access_token": access, "token_type": "bearer"}
+
+
+# PRIVATE: register (no decorator → private by default)
+@_auth.post("/register", response_model=UserRead, status_code=status.HTTP_201_CREATED)
+@public
+async def register(payload: UserCreateExtra):
+    hashed = pwd_context.hash(payload.password)
+    user_data = payload.model_dump()
+    user_data["hashed_password"] = hashed
+    try:
+        user = await User.create(**user_data)
+    except Exception as e:
+        raise HTTPException(400, f"there was an error creating the user: {str(e)}")
+    return await UserRead.from_tortoise_orm(user)
 
 
 if oauth_client:
@@ -88,44 +93,65 @@ if oauth_client:
 
 # ------------ User admin endpoints -----------------------------------------
 
-
-@_users.get("/", response_model=list[UserRead], dependencies=[require_role("admin")])
+@_admin.get("/", response_model=list[UserRead],
+            dependencies=[Depends(require_roles("admin"))])
 async def list_users():
     return await UserRead.from_queryset(User.all())
 
+@_users.get("/me", response_model=UserOut)
+async def get_current_user(request: Request):
+    user = await User.get(id=request.state.user.id).prefetch_related("roles")
+    return UserOut(
+        id=user.id,
+        username=user.username,
+        email=user.email,
+        roles=[RoleOut(id=r.id, name=r.name, description=r.description) for r in user.roles]
+    )
 
-@_users.get("/{user_id}", response_model=UserRead, dependencies=[require_role("admin")])
-async def get_user(user_id: UUID):
+@_users.get("/{user_id}", response_model=UserRead)
+async def get_user(user_id: str):
     if (user := await User.get_or_none(id=user_id)) is None:
         raise HTTPException(404, "User not found")
     return await UserRead.from_tortoise_orm(user)
 
 
-@_users.post("/{user_id}/roles/{role_name}", status_code=204, dependencies=[require_role("admin")])
-async def assign_role(user_id: UUID, role_name: str):
+@_users.post("/{user_id}/roles/{role_name}", status_code=204)
+async def assign_role(user_id: str, role_name: str):
     user = await User.get_or_none(id=user_id)
     role = await Role.get_or_none(name=role_name)
     if not user or not role:
         raise HTTPException(404, "User or role not found")
     await user.roles.add(role)
 
+@_users.delete("/{user_id}/roles/{role_name}", status_code=204)
+async def remove_role(user_id: str, role_name: str):
+    user = await User.get_or_none(id=user_id)
+    role = await Role.get_or_none(name=role_name)
+    if not user or not role:
+        raise HTTPException(404, "User or role not found")
+    await user.roles.remove(role)
 
-# ------------ Role CRUD ----------------------------------------------------
+@_users.get("/{user_id}/roles", response_model=list[RoleRead])
+async def list_user_roles(user_id: str):
+    user = await User.get_or_none(id=user_id)
+    if not user:
+        raise HTTPException(404, "User not found")
+    return await RoleRead.from_queryset(user.roles.all())
 
 
-@_roles.get("/", response_model=list[RoleRead], dependencies=[require_role("admin")])
+@_roles.get("/", response_model=list[RoleRead])
 async def list_roles():
     return await RoleRead.from_queryset(Role.all())
 
 
-@_roles.post("/", response_model=RoleRead, status_code=201, dependencies=[require_role("admin")])
+@_roles.post("/", response_model=RoleRead, status_code=201)
 async def create_role(payload: RoleCreate):
     role = await Role.create(**payload.model_dump())
     return await RoleRead.from_tortoise_orm(role)
 
 
-@_roles.delete("/{role_id}", status_code=204, dependencies=[require_role("admin")])
-async def delete_role(role_id: UUID):
+@_roles.delete("/{role_id}", status_code=204)
+async def delete_role(role_id: str):
     role = await Role.get_or_none(id=role_id)
     if not role:
         raise HTTPException(404, "Role not found")
@@ -139,3 +165,4 @@ router = APIRouter()
 router.include_router(_auth)
 router.include_router(_users)
 router.include_router(_roles)
+router.include_router(_admin)
