@@ -22,8 +22,6 @@ TORTOISE_ORM = {
             "models": [
                 "app.models.oauth",
                 "app.models.project",
-                "app.models.country",
-                "app.models.calendar",
                 "app.models.task",
                 "app.models.user",
                 "aerich.models",  # built‑in Aerich migration table
