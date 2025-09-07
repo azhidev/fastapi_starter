@@ -6,7 +6,7 @@ from app.core.security import user_authentication
 from app.api.middlewares import add_process_time_header
 from app.core.config import get_settings
 from app.db.tortoise import TORTOISE_ORM
-from app.api.v1 import users, projects, tasks, calendars, countries
+from app.api.v1 import users, projects, tasks
 import uvicorn, os, logging
 from dotenv import load_dotenv
 from tortoise.contrib.fastapi import register_tortoise
@@ -61,6 +61,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+
 @app.get("/", tags=["public"])
 async def root():
     return {"ok": True}
@@ -68,8 +69,6 @@ async def root():
 
 # Feature routers (their public endpoints will be marked with @public)
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(calendars.router, prefix="/api/v1")
-app.include_router(countries.router, prefix="/api/v1")
 # app.include_router(projects.router, prefix="/api/v1")
 # app.include_router(tasks.router, prefix="/api/v1")
 
