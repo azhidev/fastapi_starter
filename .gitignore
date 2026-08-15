@@ -302,3 +302,6 @@ helper.py
 
 venv310
 .zed/
+
+# Local patch artifacts
+*.patch

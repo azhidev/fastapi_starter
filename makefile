@@ -1,3 +1,14 @@
+PYTHON ?= python
+PIP ?= $(PYTHON) -m pip
+COMPOSE ?= docker compose
+
+.PHONY: \
+	init migration migrate clean install run dev env \
+	bootstrap-admin \
+	docker-build docker-up docker-down docker-logs docker-ps docker-migrate \
+	build-docker run-docker stop-docker \
+	patch-apply patch-export
+
 init:
 	aerich init -t app.db.tortoise.TORTOISE_ORM
 	aerich init-db
@@ -13,28 +24,53 @@ clean:
 	find . -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
 	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
 
-run:
-	python main.py
-
-build-docker:
-	docker build -t monitoring:latest .
-
-run-docker:
-	echo "running docker"
-	docker run --rm -p 8001:8000 --name monitoring -d monitoring:latest
-
-stop-docker:
-	echo "stop docker"
-	docker stop -f monitoring
-
 install:
-	pip install -r requirements.txt
+	$(PIP) install -r requirements.txt
+
+run:
+	$(PYTHON) main.py
+
+dev:
+	DEBUG=true $(PYTHON) main.py
+
+env:
+	@if test -f .env; then \
+		echo ".env already exists"; \
+	else \
+		cp .env.example .env; \
+		echo "Created .env from .env.example"; \
+	fi
 
 ADMIN_EMAIL ?=
 
 bootstrap-admin:
 	@test -n "$(ADMIN_EMAIL)" || { echo "Usage: make bootstrap-admin ADMIN_EMAIL=user@example.com" >&2; exit 2; }
-	python -m tools.bootstrap_admin --email "$(ADMIN_EMAIL)"
+	$(PYTHON) -m tools.bootstrap_admin --email "$(ADMIN_EMAIL)"
+
+# Docker workflow -------------------------------------------------------------
+docker-build:
+	$(COMPOSE) build
+
+docker-up: env
+	$(COMPOSE) up --build -d
+	@echo "API: http://localhost:$${APP_PORT:-8000}"
+
+docker-down:
+	$(COMPOSE) down
+
+docker-logs:
+	$(COMPOSE) logs -f api
+
+docker-ps:
+	$(COMPOSE) ps
+
+docker-migrate: env
+	$(COMPOSE) run --rm migrate
+
+# Backward-compatible aliases.
+build-docker: docker-build
+run-docker: docker-up
+stop-docker: docker-down
 
 # Patch workflow --------------------------------------------------------------
 PATCH ?= changes.patch
