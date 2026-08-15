@@ -1,11 +1,9 @@
 from datetime import timedelta
-from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from passlib.context import CryptContext
 from httpx_oauth.clients.google import GoogleOAuth2
-from pydantic import BaseModel, ConfigDict, Field
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.exceptions import IntegrityError
 
@@ -13,8 +11,7 @@ from app.core.config import get_settings
 from app.core.security import create_access_token, public, require_active_user, require_roles
 from app.models.user import User, Role
 from app.models.oauth import OAuthAccount
-from app.schemas.user import UserCreateExtra, UserRead, UserCreate, UserOut, RoleOut
-from typing import List
+from app.schemas.user import RoleOut, UserCreateExtra, UserOut, UserRead
 
 settings = get_settings()
 

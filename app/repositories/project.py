@@ -1,6 +1,4 @@
 from typing import Sequence
-from tortoise.exceptions import DoesNotExist
-
 from app.models.project import Project
 
 

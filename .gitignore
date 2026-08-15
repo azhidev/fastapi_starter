@@ -305,3 +305,6 @@ venv310
 
 # Local patch artifacts
 *.patch
+
+# Local test database
+tests/.test.sqlite3

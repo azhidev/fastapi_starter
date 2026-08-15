@@ -54,8 +54,8 @@ async def root():
 
 # Feature routers (their public endpoints are explicitly marked with @public).
 app.include_router(users.router, prefix="/api/v1")
-# app.include_router(projects.router, prefix="/api/v1")
-# app.include_router(tasks.router, prefix="/api/v1")
+app.include_router(projects.router, prefix="/api/v1")
+app.include_router(tasks.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":

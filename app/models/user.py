@@ -1,6 +1,4 @@
-import uuid
 from fastapi.exceptions import HTTPException
-from pydantic import HttpUrl
 from tortoise import fields, models
 from epyxid import XID
 

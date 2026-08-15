@@ -3,7 +3,7 @@ PIP ?= $(PYTHON) -m pip
 COMPOSE ?= docker compose
 
 .PHONY: \
-	init migration migrate clean install run dev env \
+	init migration migrate clean install install-dev run dev env test lint check \
 	bootstrap-admin \
 	docker-build docker-up docker-down docker-logs docker-ps docker-migrate \
 	build-docker run-docker stop-docker \
@@ -26,6 +26,17 @@ clean:
 
 install:
 	$(PIP) install -r requirements.txt
+
+install-dev:
+	$(PIP) install -r requirements-dev.txt
+
+test:
+	$(PYTHON) -m pytest
+
+lint:
+	ruff check app main.py tools tests
+
+check: lint test
 
 run:
 	$(PYTHON) main.py
