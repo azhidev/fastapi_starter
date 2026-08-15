@@ -20,10 +20,9 @@ settings = get_settings()
 
 pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
+oauth_client: GoogleOAuth2 | None = None
 if settings.google_client_id and settings.google_client_secret:
     oauth_client = GoogleOAuth2(settings.google_client_id, settings.google_client_secret)
-
-oauth_client: GoogleOAuth2 | None = None
 # ----- Role schemas ----------------------------------------------------------
 RoleRead = pydantic_model_creator(Role, name="RoleRead")
 RoleCreate = pydantic_model_creator(Role, name="RoleCreate", exclude_readonly=True)
@@ -52,7 +51,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
 @public
 async def register(payload: UserCreateExtra):
     hashed = pwd_context.hash(payload.password)
-    user_data = payload.model_dump()
+    user_data = payload.model_dump(exclude={"password"})
     user_data["hashed_password"] = hashed
     try:
         user = await User.create(**user_data)
@@ -64,6 +63,7 @@ async def register(payload: UserCreateExtra):
 if oauth_client:
 
     @_auth.get("/google/login")
+    @public
     async def google_login():
         redirect = await oauth_client.get_authorization_url(
             settings.google_redirect_uri,
@@ -73,6 +73,7 @@ if oauth_client:
         return RedirectResponse(redirect)
 
     @_auth.get("/google/callback", response_model=UserRead)
+    @public
     async def google_callback(code: str):
         token_data = await oauth_client.get_access_token(code, settings.google_redirect_uri)
         info = await oauth_client.get_id_email(token_data["access_token"])

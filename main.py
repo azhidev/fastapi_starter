@@ -63,6 +63,7 @@ app.add_middleware(
 
 
 @app.get("/", tags=["public"])
+@public
 async def root():
     return {"ok": True}
 

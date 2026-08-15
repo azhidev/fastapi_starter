@@ -9,8 +9,9 @@ migrate:
 	aerich upgrade
 
 clean:
-	rm -rf migrations
-	rm -f pyproject.toml
+	find . -type d -name "__pycache__" -prune -exec rm -rf {} +
+	find . -type f \( -name "*.pyc" -o -name "*.pyo" \) -delete
+	rm -rf .pytest_cache .mypy_cache .ruff_cache htmlcov .coverage
 
 run:
 	python main.py
@@ -28,3 +29,22 @@ stop-docker:
 
 install:
 	pip install -r requirements.txt
+
+# Patch workflow --------------------------------------------------------------
+PATCH ?= changes.patch
+BASE ?= HEAD
+
+patch-apply:
+	@test -f "$(PATCH)" || { echo "Patch file not found: $(PATCH)" >&2; exit 2; }
+	git apply --check "$(PATCH)"
+	git apply --index "$(PATCH)"
+	@echo "Applied and staged: $(PATCH)"
+
+patch-export:
+	@mkdir -p "$$(dirname "$(PATCH)")"
+	@if test -n "$$(git ls-files --others --exclude-standard)"; then \
+		echo "Warning: untracked files are not included. Run 'git add <file>' first if they belong in the patch." >&2; \
+	fi
+	@git diff --binary --full-index "$(BASE)" -- > "$(PATCH)"
+	@test -s "$(PATCH)" || { rm -f "$(PATCH)"; echo "No changes relative to $(BASE)." >&2; exit 1; }
+	@echo "Exported patch: $(PATCH) (base: $(BASE))"

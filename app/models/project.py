@@ -1,6 +1,5 @@
-import uuid
-from tortoise import models, fields
-from app.models.user import User
+from epyxid import XID
+from tortoise import fields, models
 
 
 class Project(models.Model):
