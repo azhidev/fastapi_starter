@@ -7,10 +7,10 @@ from passlib.context import CryptContext
 from httpx_oauth.clients.google import GoogleOAuth2
 from pydantic import BaseModel, ConfigDict, Field
 from tortoise.contrib.pydantic import pydantic_model_creator
-from tortoise.exceptions import DoesNotExist
+from tortoise.exceptions import IntegrityError
 
 from app.core.config import get_settings
-from app.core.security import create_access_token, public, require_roles
+from app.core.security import create_access_token, public, require_active_user, require_roles
 from app.models.user import User, Role
 from app.models.oauth import OAuthAccount
 from app.schemas.user import UserCreateExtra, UserRead, UserCreate, UserOut, RoleOut
@@ -40,8 +40,12 @@ _roles = APIRouter(prefix="/roles", tags=["roles"])
 @public
 async def login(form: OAuth2PasswordRequestForm = Depends()):
     user = await User.get_or_none(username=form.username)
-    if not user or not pwd_context.verify(form.password, user.hashed_password):
-        raise HTTPException(400, "Incorrect email or password")
+    if not user or not user.is_active or not pwd_context.verify(form.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
     access = create_access_token({"sub": str(user.id)}, expires_delta=timedelta(weeks=1))
     return {"access_token": access, "token_type": "bearer"}
 
@@ -55,8 +59,11 @@ async def register(payload: UserCreateExtra):
     user_data["hashed_password"] = hashed
     try:
         user = await User.create(**user_data)
-    except Exception as e:
-        raise HTTPException(400, f"there was an error creating the user: {str(e)}")
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Username or email already registered",
+        )
     return await UserRead.from_tortoise_orm(user)
 
 
@@ -100,8 +107,8 @@ async def list_users():
     return await UserRead.from_queryset(User.all())
 
 @_users.get("/me", response_model=UserOut)
-async def get_current_user(request: Request):
-    user = await User.get(id=request.state.user.id).prefetch_related("roles")
+async def get_current_user(user: User = Depends(require_active_user)):
+    user = await User.get(id=user.id).prefetch_related("roles")
     return UserOut(
         id=user.id,
         username=user.username,
@@ -109,14 +116,22 @@ async def get_current_user(request: Request):
         roles=[RoleOut(id=r.id, name=r.name, description=r.description) for r in user.roles]
     )
 
+
 @_users.get("/{user_id}", response_model=UserRead)
-async def get_user(user_id: str):
+async def get_user(user_id: str, current_user: User = Depends(require_active_user)):
+    if current_user.id != user_id:
+        await current_user.can("admin")
+
     if (user := await User.get_or_none(id=user_id)) is None:
         raise HTTPException(404, "User not found")
     return await UserRead.from_tortoise_orm(user)
 
 
-@_users.post("/{user_id}/roles/{role_name}", status_code=204)
+@_users.post(
+    "/{user_id}/roles/{role_name}",
+    status_code=204,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def assign_role(user_id: str, role_name: str):
     user = await User.get_or_none(id=user_id)
     role = await Role.get_or_none(name=role_name)
@@ -124,38 +139,77 @@ async def assign_role(user_id: str, role_name: str):
         raise HTTPException(404, "User or role not found")
     await user.roles.add(role)
 
-@_users.delete("/{user_id}/roles/{role_name}", status_code=204)
+
+@_users.delete(
+    "/{user_id}/roles/{role_name}",
+    status_code=204,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def remove_role(user_id: str, role_name: str):
     user = await User.get_or_none(id=user_id)
     role = await Role.get_or_none(name=role_name)
     if not user or not role:
         raise HTTPException(404, "User or role not found")
+
+    if role.name == "admin" and await user.has_role("admin"):
+        admin_count = await User.filter(roles__name="admin").distinct().count()
+        if admin_count <= 1:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="Cannot remove the last admin role",
+            )
+
     await user.roles.remove(role)
 
+
 @_users.get("/{user_id}/roles", response_model=list[RoleRead])
-async def list_user_roles(user_id: str):
+async def list_user_roles(
+    user_id: str,
+    current_user: User = Depends(require_active_user),
+):
+    if current_user.id != user_id:
+        await current_user.can("admin")
+
     user = await User.get_or_none(id=user_id)
     if not user:
         raise HTTPException(404, "User not found")
     return await RoleRead.from_queryset(user.roles.all())
 
 
-@_roles.get("/", response_model=list[RoleRead])
+@_roles.get(
+    "/",
+    response_model=list[RoleRead],
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def list_roles():
     return await RoleRead.from_queryset(Role.all())
 
 
-@_roles.post("/", response_model=RoleRead, status_code=201)
+@_roles.post(
+    "/",
+    response_model=RoleRead,
+    status_code=201,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def create_role(payload: RoleCreate):
     role = await Role.create(**payload.model_dump())
     return await RoleRead.from_tortoise_orm(role)
 
 
-@_roles.delete("/{role_id}", status_code=204)
+@_roles.delete(
+    "/{role_id}",
+    status_code=204,
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def delete_role(role_id: str):
     role = await Role.get_or_none(id=role_id)
     if not role:
         raise HTTPException(404, "Role not found")
+    if role.name == "admin":
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="The admin role cannot be deleted",
+        )
     await role.delete()
 
 

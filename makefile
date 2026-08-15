@@ -30,6 +30,12 @@ stop-docker:
 install:
 	pip install -r requirements.txt
 
+ADMIN_EMAIL ?=
+
+bootstrap-admin:
+	@test -n "$(ADMIN_EMAIL)" || { echo "Usage: make bootstrap-admin ADMIN_EMAIL=user@example.com" >&2; exit 2; }
+	python -m tools.bootstrap_admin --email "$(ADMIN_EMAIL)"
+
 # Patch workflow --------------------------------------------------------------
 PATCH ?= changes.patch
 BASE ?= HEAD

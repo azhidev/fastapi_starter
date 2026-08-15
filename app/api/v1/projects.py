@@ -29,5 +29,8 @@ async def get_project(project_id: str, user=Depends(require_active_user)):
 
 @router.delete("/{project_id}", status_code=204)
 async def delete_project(project_id: str, user=Depends(require_active_user)):
-    obj = await repo.get(project_id, user.id)
+    try:
+        obj = await repo.get(project_id, user.id)
+    except DoesNotExist:
+        raise HTTPException(404, "Project not found")
     await repo.delete(obj)

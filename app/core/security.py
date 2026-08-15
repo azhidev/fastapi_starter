@@ -10,6 +10,7 @@ from app.models.user import User
 
 settings = get_settings()
 ALGORITHM = "HS256"
+AUTHENTICATE_HEADERS = {"WWW-Authenticate": "Bearer"}
 
 # IMPORTANT: auto_error=False so public routes won't 401 before our skip logic runs
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
@@ -31,18 +32,30 @@ def verify_token(token: str) -> Optional[dict[str, Any]]:
 async def _user_from_token(token: str) -> "User":
     payload = verify_token(token)
     if not payload or not (user_id := payload.get("sub")):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid token")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid token",
+            headers=AUTHENTICATE_HEADERS,
+        )
 
     user = await User.get_or_none(id=user_id)
     if not user:
         # do not leak whether the user exists
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid credentials",
+            headers=AUTHENTICATE_HEADERS,
+        )
     return user
 
 # STRICT: raises 401 if token missing/invalid
 async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> "User":
     if not token:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers=AUTHENTICATE_HEADERS,
+        )
     return await _user_from_token(token)
 
 # OPTIONAL: returns None if token missing/invalid (useful for public routes / global guard)
@@ -94,7 +107,11 @@ async def user_authentication(
 
     # if private, a valid user is required
     if not is_public and not maybe_user:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Not authenticated",
+            headers=AUTHENTICATE_HEADERS,
+        )
 
 
 def can(role_name: str):
@@ -117,7 +134,7 @@ def require_roles(*role_names: str, all_: bool = False):
     Use as: dependencies=[Depends(require_roles("admin"))]
     or with all roles required: Depends(require_roles("admin", "manager", all_=True))
     """
-    async def _dep(current_user: User = Depends(get_current_user)) -> User:
+    async def _dep(current_user: User = Depends(require_active_user)) -> User:
         ok = await (
             User.has_all_roles if all_ else User.has_any_role
         )(current_user.id, *role_names)
