@@ -1,20 +1,12 @@
-"""Database bootstrap + Aerich config.
+"""Tortoise ORM runtime configuration and Aerich integration."""
 
-* `TORTOISE_ORM` is the dict Aerich expects when you run
-    $ aerich init -t app.db.tortoise.TORTOISE_ORM
+from tortoise import Tortoise
 
-* `init_db()` still registers the connection for FastAPI runtime.
-"""
-
-from fastapi import FastAPI
-from tortoise.contrib.fastapi import register_tortoise
 from app.core.config import get_settings
 
 settings = get_settings()
-# print(str(settings.database_url), "-" * 100)
-# ---------------------------------------------------------------------------
-# Aerich‑compatible configuration dict
-# ---------------------------------------------------------------------------
+
+# Aerich imports this object directly when generating and applying migrations.
 TORTOISE_ORM = {
     "connections": {"default": str(settings.database_url)},
     "apps": {
@@ -24,22 +16,19 @@ TORTOISE_ORM = {
                 "app.models.project",
                 "app.models.task",
                 "app.models.user",
-                "aerich.models",  # built‑in Aerich migration table
+                "aerich.models",
             ],
             "default_connection": "default",
         }
     },
 }
 
-# ---------------------------------------------------------------------------
-# Register with FastAPI at runtime
-# ---------------------------------------------------------------------------
+
+async def init_db() -> None:
+    """Initialize database connections without modifying the schema."""
+    await Tortoise.init(config=TORTOISE_ORM)
 
 
-# def init_db(app: FastAPI) -> None:
-#     register_tortoise(
-#         app,
-#         config=TORTOISE_ORM,
-#         generate_schemas=False,  # migrations handle DDL
-#         add_exception_handlers=True,
-#     )
+async def close_db() -> None:
+    """Close all database connections created by Tortoise."""
+    await Tortoise.close_connections()
