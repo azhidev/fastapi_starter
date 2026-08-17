@@ -48,7 +48,7 @@ The hardening work completed so far establishes the following foundation:
 - Aerich migrations are the schema source of truth;
 - application lifecycle and CORS configuration are environment-driven;
 - a Dockerfile and Docker Compose development workflow are available;
-- PostgreSQL readiness and one-shot migrations are integrated into Compose;
+- Compose runs one-shot migrations against a configured PostgreSQL database before starting the API;
 - Pytest, Ruff, and GitHub Actions CI are wired into the project;
 - API-level tests cover key authentication, authorization, and ownership behavior.
 
@@ -111,7 +111,7 @@ Completed work includes explicit database initialization/shutdown, migration-onl
 
 **Goal:** provide one understandable containerized development path.
 
-Completed work includes a non-root application image, one Compose topology, PostgreSQL health checks, a one-shot migration service, API startup dependencies, and focused Makefile helpers.
+Completed work includes a non-root application image, one Compose topology for the application, a one-shot migration service against an existing PostgreSQL database, API startup dependencies, and focused Makefile helpers.
 
 **Completion condition:** the container architecture has one responsibility per service and does not duplicate database or migration workflows.
 
@@ -257,7 +257,7 @@ make dev
 make docker-up
 ```
 
-The Compose workflow starts PostgreSQL, waits for it to become healthy, runs migrations once, and starts the API after migrations succeed.
+The Compose workflow uses `DATABASE_URL` from `.env` to connect to an existing PostgreSQL database, runs migrations once, and starts the API only after migrations succeed. PostgreSQL is not managed by this Compose project. Because the default local URL uses `localhost`, the application containers use host networking; ensure the configured database is running and reachable before starting Compose.
 
 ### Quality checks
 

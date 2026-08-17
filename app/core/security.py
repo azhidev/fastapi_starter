@@ -1,9 +1,10 @@
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Optional
 
-from jose import JWTError, jwt
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
+from jose import JWTError, jwt
+from passlib.context import CryptContext
 
 from app.core.config import get_settings
 from app.models.user import User
@@ -12,14 +13,24 @@ settings = get_settings()
 ALGORITHM = "HS256"
 AUTHENTICATE_HEADERS = {"WWW-Authenticate": "Bearer"}
 
+pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
+DUMMY_PASSWORD_HASH = (
+    "$argon2id$v=19$m=65536,t=3,p=4$AOAcwzjHuDdmrLW2du7dmw$"
+    "40Wp1lORRxQVQOxYPaldvGWC1z1oAB+cB2PvFeBtHBY"
+)
+
 # IMPORTANT: auto_error=False so public routes won't 401 before our skip logic runs
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
 def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
-    expire = datetime.now(timezone.utc) + (expires_delta or timedelta(seconds=settings.jwt_lifetime_seconds))
-    to_encode.update({"exp": expire})
+    lifetime = (
+        expires_delta
+        if expires_delta is not None
+        else timedelta(seconds=settings.jwt_lifetime_seconds)
+    )
+    to_encode.update({"exp": datetime.now(timezone.utc) + lifetime})
     return jwt.encode(to_encode, settings.secret, algorithm=ALGORITHM)
 
 

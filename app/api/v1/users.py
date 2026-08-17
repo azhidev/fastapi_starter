@@ -1,28 +1,32 @@
-from datetime import timedelta
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from passlib.context import CryptContext
 from httpx_oauth.clients.google import GoogleOAuth2
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.exceptions import IntegrityError
+from tortoise.transactions import in_transaction
 
 from app.core.config import get_settings
-from app.core.security import create_access_token, public, require_active_user, require_roles
-from app.models.user import User, Role
+from app.core.security import (
+    DUMMY_PASSWORD_HASH,
+    create_access_token,
+    public,
+    pwd_context,
+    require_active_user,
+    require_roles,
+)
 from app.models.oauth import OAuthAccount
-from app.schemas.user import RoleOut, UserCreateExtra, UserOut, UserRead
+from app.models.user import Role, User
+from app.schemas.user import RoleCreate, RoleOut, UserCreateExtra, UserOut, UserRead
 
 settings = get_settings()
 
-pwd_context = CryptContext(schemes=["argon2"], deprecated="auto")
 
 oauth_client: GoogleOAuth2 | None = None
 if settings.google_client_id and settings.google_client_secret:
     oauth_client = GoogleOAuth2(settings.google_client_id, settings.google_client_secret)
 # ----- Role schemas ----------------------------------------------------------
 RoleRead = pydantic_model_creator(Role, name="RoleRead")
-RoleCreate = pydantic_model_creator(Role, name="RoleCreate", exclude_readonly=True)
 
 # ----- Routers ---------------------------------------------------------------
 _auth = APIRouter(prefix="/auth", tags=["auth"])
@@ -37,13 +41,18 @@ _roles = APIRouter(prefix="/roles", tags=["roles"])
 @public
 async def login(form: OAuth2PasswordRequestForm = Depends()):
     user = await User.get_or_none(username=form.username)
-    if not user or not user.is_active or not pwd_context.verify(form.password, user.hashed_password):
+    password_hash = (
+        user.hashed_password if user is not None and user.is_active else DUMMY_PASSWORD_HASH
+    )
+    password_is_valid = pwd_context.verify(form.password, password_hash)
+
+    if user is None or not user.is_active or not password_is_valid:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access = create_access_token({"sub": str(user.id)}, expires_delta=timedelta(weeks=1))
+    access = create_access_token({"sub": str(user.id)})
     return {"access_token": access, "token_type": "bearer"}
 
 
@@ -130,11 +139,22 @@ async def get_user(user_id: str, current_user: User = Depends(require_active_use
     dependencies=[Depends(require_roles("admin"))],
 )
 async def assign_role(user_id: str, role_name: str):
-    user = await User.get_or_none(id=user_id)
-    role = await Role.get_or_none(name=role_name)
-    if not user or not role:
-        raise HTTPException(404, "User or role not found")
-    await user.roles.add(role)
+    async with in_transaction() as connection:
+        role = await (
+            Role.filter(name=role_name)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        user = await (
+            User.filter(id=user_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        if not user or not role:
+            raise HTTPException(404, "User or role not found")
+        await user.roles.add(role, using_db=connection)
 
 
 @_users.delete(
@@ -143,20 +163,42 @@ async def assign_role(user_id: str, role_name: str):
     dependencies=[Depends(require_roles("admin"))],
 )
 async def remove_role(user_id: str, role_name: str):
-    user = await User.get_or_none(id=user_id)
-    role = await Role.get_or_none(name=role_name)
-    if not user or not role:
-        raise HTTPException(404, "User or role not found")
+    async with in_transaction() as connection:
+        # The role row is the stable lock shared by concurrent mutations, including
+        # removals targeting different users.
+        role = await (
+            Role.filter(name=role_name)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        user = await (
+            User.filter(id=user_id)
+            .using_db(connection)
+            .select_for_update()
+            .first()
+        )
+        if not user or not role:
+            raise HTTPException(404, "User or role not found")
 
-    if role.name == "admin" and await user.has_role("admin"):
-        admin_count = await User.filter(roles__name="admin").distinct().count()
-        if admin_count <= 1:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="Cannot remove the last admin role",
+        has_role = await (
+            User.filter(id=user.id, roles__id=role.id).using_db(connection).exists()
+        )
+        if role.name == "admin" and has_role:
+            active_admin_count = await (
+                User.filter(is_active=True, roles__id=role.id)
+                .using_db(connection)
+                .distinct()
+                .count()
             )
+            remaining_active_admins = active_admin_count - int(user.is_active)
+            if remaining_active_admins < 1:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="Cannot remove the last active admin role",
+                )
 
-    await user.roles.remove(role)
+        await user.roles.remove(role, using_db=connection)
 
 
 @_users.get("/{user_id}/roles", response_model=list[RoleRead])
@@ -189,7 +231,13 @@ async def list_roles():
     dependencies=[Depends(require_roles("admin"))],
 )
 async def create_role(payload: RoleCreate):
-    role = await Role.create(**payload.model_dump())
+    try:
+        role = await Role.create(**payload.model_dump())
+    except IntegrityError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Role already exists",
+        ) from exc
     return await RoleRead.from_tortoise_orm(role)
 
 
