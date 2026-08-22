@@ -13,8 +13,6 @@ TORTOISE_ORM = {
         "models": {
             "models": [
                 "app.models.oauth",
-                "app.models.project",
-                "app.models.task",
                 "app.models.user",
                 "aerich.models",
             ],

@@ -5,7 +5,7 @@ COMPOSE ?= docker compose
 .PHONY: \
 	init migration migrate clean install install-dev run dev env test lint check \
 	bootstrap-admin \
-	docker-build docker-up docker-down docker-logs docker-ps docker-migrate \
+	docker-build docker-up docker-restart docker-down docker-logs docker-ps docker-migrate \
 	build-docker run-docker stop-docker \
 	patch-apply patch-export
 
@@ -63,7 +63,12 @@ docker-build:
 	$(COMPOSE) build
 
 docker-up: env
-	$(COMPOSE) up --build -d
+	$(COMPOSE) up --build -d --remove-orphans
+	@echo "API: http://localhost:$${APP_PORT:-8000}"
+
+docker-restart: env
+	$(COMPOSE) down --remove-orphans
+	$(COMPOSE) up --build -d --remove-orphans
 	@echo "API: http://localhost:$${APP_PORT:-8000}"
 
 docker-down:

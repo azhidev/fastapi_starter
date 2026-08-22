@@ -7,7 +7,7 @@ This repository serves two purposes:
 1. a dependable starting point for future backend projects;
 2. a portfolio-quality example of practical backend engineering.
 
-The project is still being hardened. The current implementation contains a temporary `Project` / `Task` example domain and a Google-specific OAuth flow. Both are intentionally scheduled for cleanup before the starter is considered ready.
+The project is still being hardened. The business-specific example domain has been removed; the remaining Google-specific OAuth flow is intentionally scheduled for provider-neutral cleanup before the starter is considered ready.
 
 ## Product Principle
 
@@ -43,18 +43,17 @@ The hardening work completed so far establishes the following foundation:
 - runtime and configuration blockers have been fixed;
 - user registration and authentication behavior has been corrected;
 - role-management privilege escalation has been restricted;
-- resource ownership rules have been added to the temporary example domain;
+- authentication and authorization boundaries have focused regression coverage;
 - database schema creation has been removed from application startup;
 - Aerich migrations are the schema source of truth;
 - application lifecycle and CORS configuration are environment-driven;
 - a Dockerfile and Docker Compose development workflow are available;
 - Compose runs one-shot migrations against a configured PostgreSQL database before starting the API;
 - Pytest, Ruff, and GitHub Actions CI are wired into the project;
-- API-level tests cover key authentication, authorization, and ownership behavior.
+- API-level tests cover key authentication and authorization behavior;
+- business-specific models, routes, and runtime dependencies have been removed.
 
-### Temporary architecture
-
-The current `Project` and `Task` models/routes exist as an integration test bed. They are **not part of the final generic starter**.
+### Remaining temporary architecture
 
 The current OAuth implementation is Google-oriented. The final architecture should preserve a working provider as a reference implementation while moving provider-specific behavior behind a small generic interface.
 
@@ -123,34 +122,35 @@ Completed work includes focused Pytest API tests, Ruff, GitHub Actions, PostgreS
 
 **Completion condition:** security-critical behaviors are represented by tests and the same quality checks can run locally and in CI.
 
-### Phase 6 — Stabilize the current core
+### Phase 6 — Stabilize the current core ✅
 
 **Goal:** fix behavior exposed by real end-to-end use before changing the domain architecture.
 
-Scope:
+Completed work:
 
-- run the current authentication and temporary Project/Task flows end-to-end;
-- resolve migration, transaction, status-code, and error-response inconsistencies;
-- verify duplicate registration, invalid credentials, inactive users, admin operations, deletes, and ownership edge cases;
-- verify Docker restart/startup behavior against an existing database;
-- add regression tests only for behavior that needs to be guaranteed.
+- exercised authentication and the temporary Project/Task flows end-to-end;
+- made registration, login, inactive-user, role-management, delete, and ownership behavior deterministic;
+- added transaction boundaries for role mutations and Project/Task race-sensitive operations;
+- corrected active-core migration safety, restored user-role uniqueness, and neutralized an obsolete migration blocker;
+- verified two coordinated Docker restarts against an existing PostgreSQL database;
+- added focused regression coverage without introducing new product features.
 
 Do not introduce new product features in this phase.
 
 **Completion condition:** known core flows are deterministic, security rules have regression coverage, and no unresolved integration bug is being hidden by the next refactor.
 
-### Phase 7 — Remove the example business domain
+### Phase 7 — Remove the example business domain ✅
 
 **Goal:** turn the repository from a task-management example into a genuinely generic starter.
 
-Scope:
+Completed work:
 
-- remove Project and Task models, schemas, repositories, routes, and domain-specific migrations where safe to do so;
-- remove domain-specific tests after replacing their security intent with generic/auth-focused coverage;
-- keep application layering only where it serves the remaining starter capabilities;
-- avoid replacing Project/Task with another arbitrary example domain.
-
-If migration history must remain append-only for existing databases, remove the domain through a new migration rather than rewriting already-shared migration history. If the repository has not yet promised migration compatibility, evaluate whether squashing to a clean initial migration is safer before the first stable release.
+- removed Project and Task models, schemas, repositories, routes, and router registration;
+- removed domain-specific tests after preserving their security intent in authentication and authorization coverage;
+- removed runtime ORM registration for the example domain and deleted its now-unused layering;
+- added an append-only migration that removes Project, Task, and other leftover business-domain tables while preserving authentication data and existing migration history;
+- verified that the generated API schema no longer exposes the example business domain;
+- avoided replacing Project/Task with another arbitrary example domain.
 
 **Completion condition:** the starter core contains authentication/infrastructure concerns only and no business-specific API surface.
 
@@ -259,6 +259,14 @@ make docker-up
 
 The Compose workflow uses `DATABASE_URL` from `.env` to connect to an existing PostgreSQL database, runs migrations once, and starts the API only after migrations succeed. PostgreSQL is not managed by this Compose project. Because the default local URL uses `localhost`, the application containers use host networking; ensure the configured database is running and reachable before starting Compose.
 
+Use the coordinated restart path when validating an existing database:
+
+```bash
+make docker-restart
+```
+
+This recreates the application containers, reruns pending migrations, and starts the API only after migrations succeed. Raw `docker compose restart` is not the supported workflow because it bypasses Compose startup dependency conditions.
+
 ### Quality checks
 
 ```bash
@@ -300,4 +308,4 @@ These are **extension points, not roadmap requirements**.
 
 ## Status
 
-The project is currently in the hardening/refactoring stage. Phases 1–5 are implemented; Phase 6 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.
+The project is currently in the hardening/refactoring stage. Phases 1–7 are implemented; Phase 8 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.

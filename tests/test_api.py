@@ -65,51 +65,8 @@ def test_role_management_requires_admin(client: TestClient):
     assert {role["name"] for role in roles.json()} == {"admin"}
 
 
-def test_projects_and_tasks_are_scoped_to_the_owner(client: TestClient):
-    register_user(client, "alice")
-    register_user(client, "bob")
-    alice_headers = auth_headers(client, "alice")
-    bob_headers = auth_headers(client, "bob")
+def test_example_business_domain_is_not_exposed(client: TestClient):
+    openapi = client.get("/openapi.json")
 
-    project_response = client.post(
-        "/api/v1/projects/",
-        headers=alice_headers,
-        json={"name": "Alice project", "description": "private"},
-    )
-    assert project_response.status_code == 201, project_response.text
-    project = project_response.json()
-
-    hidden_project = client.get(
-        f"/api/v1/projects/{project['id']}",
-        headers=bob_headers,
-    )
-    assert hidden_project.status_code == 404
-
-    hidden_create = client.post(
-        f"/api/v1/projects/{project['id']}/tasks/",
-        headers=bob_headers,
-        json={"title": "Should not exist"},
-    )
-    assert hidden_create.status_code == 404
-
-    task_response = client.post(
-        f"/api/v1/projects/{project['id']}/tasks/",
-        headers=alice_headers,
-        json={"title": "Ship the API"},
-    )
-    assert task_response.status_code == 201, task_response.text
-    task = task_response.json()
-    assert task["done"] is False
-
-    hidden_toggle = client.post(
-        f"/api/v1/projects/{project['id']}/tasks/{task['id']}/toggle",
-        headers=bob_headers,
-    )
-    assert hidden_toggle.status_code == 404
-
-    owner_toggle = client.post(
-        f"/api/v1/projects/{project['id']}/tasks/{task['id']}/toggle",
-        headers=alice_headers,
-    )
-    assert owner_toggle.status_code == 200
-    assert owner_toggle.json()["done"] is True
+    assert openapi.status_code == 200
+    assert not any(path.startswith("/api/v1/projects") for path in openapi.json()["paths"])

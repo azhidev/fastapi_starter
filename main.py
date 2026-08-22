@@ -5,7 +5,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.middlewares import add_process_time_header
-from app.api.v1 import projects, tasks, users
+from app.api.v1 import users
 from app.core.config import get_settings
 from app.core.security import public, user_authentication
 from app.db.tortoise import close_db, init_db
@@ -54,8 +54,6 @@ async def root():
 
 # Feature routers (their public endpoints are explicitly marked with @public).
 app.include_router(users.router, prefix="/api/v1")
-app.include_router(projects.router, prefix="/api/v1")
-app.include_router(tasks.router, prefix="/api/v1")
 
 
 if __name__ == "__main__":
