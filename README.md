@@ -7,7 +7,7 @@ This repository serves two purposes:
 1. a dependable starting point for future backend projects;
 2. a portfolio-quality example of practical backend engineering.
 
-The project is still being hardened. The business-specific example domain has been removed; the remaining Google-specific OAuth flow is intentionally scheduled for provider-neutral cleanup before the starter is considered ready.
+The project is still being hardened. The business-specific example domain has been removed, and OAuth now uses a provider-neutral authentication core with Google retained as the reference adapter.
 
 ## Product Principle
 
@@ -51,11 +51,12 @@ The hardening work completed so far establishes the following foundation:
 - Compose runs one-shot migrations against a configured PostgreSQL database before starting the API;
 - Pytest, Ruff, and GitHub Actions CI are wired into the project;
 - API-level tests cover key authentication and authorization behavior;
-- business-specific models, routes, and runtime dependencies have been removed.
+- business-specific models, routes, and runtime dependencies have been removed;
+- OAuth authorization, callback exchange, identity normalization, account linking, and JWT login use a provider-neutral core with a tested Google adapter.
 
-### Remaining temporary architecture
+### OAuth architecture
 
-The current OAuth implementation is Google-oriented. The final architecture should preserve a working provider as a reference implementation while moving provider-specific behavior behind a small generic interface.
+The authentication core depends on a small OAuth provider contract rather than Google-specific behavior. Google is the single reference adapter; provider selection and callback configuration are environment-driven, and normal tests replace the provider boundary without making third-party network calls.
 
 ## Project Readiness Definition
 
@@ -154,18 +155,18 @@ Completed work:
 
 **Completion condition:** the starter core contains authentication/infrastructure concerns only and no business-specific API surface.
 
-### Phase 8 — Generic OAuth architecture
+### Phase 8 — Generic OAuth architecture ✅
 
 **Goal:** preserve OAuth capability without coupling the authentication core to Google.
 
-Scope:
+Completed work:
 
-- define the smallest useful OAuth provider contract;
-- isolate authorization URL generation, callback/token exchange, and normalized user identity behind that contract;
-- make provider selection/configuration explicit;
-- adapt the existing Google flow as the first reference provider instead of implementing multiple providers;
-- keep OAuth account persistence provider-aware but provider-neutral;
-- test the provider boundary and core account-link/login behavior without requiring live third-party calls in the normal test suite.
+- defined a minimal OAuth provider contract for authorization URLs and normalized callback results;
+- isolated Google token exchange and identity normalization in a reference adapter;
+- made provider selection and redirect configuration explicit through environment settings;
+- moved account creation, email-based linking, token persistence, inactive-user handling, and JWT login into a provider-neutral service;
+- replaced Google-specific routes with generic OAuth login and callback endpoints;
+- added provider-boundary and account-link/login tests that make no live third-party calls.
 
 Do **not** add GitHub, Microsoft, Discord, or other providers merely to demonstrate extensibility. A second provider should be added only when there is an actual requirement.
 
@@ -267,6 +268,19 @@ make docker-restart
 
 This recreates the application containers, reruns pending migrations, and starts the API only after migrations succeed. Raw `docker compose restart` is not the supported workflow because it bypasses Compose startup dependency conditions.
 
+### OAuth reference provider
+
+OAuth is disabled until a provider is explicitly selected and configured:
+
+```env
+OAUTH_PROVIDER=google
+OAUTH_REDIRECT_URI=http://localhost:8000/api/v1/auth/oauth/callback
+GOOGLE_CLIENT_ID=your-google-client-id
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+```
+
+The generic flow uses `GET /api/v1/auth/oauth/login` and `GET /api/v1/auth/oauth/callback`. The callback links a provider identity to an existing normalized email when possible, creates an OAuth-only user otherwise, rejects inactive users, persists provider-aware credentials, and returns a JWT access token. When configuration is absent, the OAuth endpoints return `503` rather than exposing a partially initialized flow.
+
 ### Quality checks
 
 ```bash
@@ -308,4 +322,4 @@ These are **extension points, not roadmap requirements**.
 
 ## Status
 
-The project is currently in the hardening/refactoring stage. Phases 1–7 are implemented; Phase 8 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.
+The project is currently in the hardening/refactoring stage. Phases 1–8 are implemented; Phase 9 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.

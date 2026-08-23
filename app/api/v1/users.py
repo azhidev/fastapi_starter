@@ -1,7 +1,6 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
-from httpx_oauth.clients.google import GoogleOAuth2
 from tortoise.contrib.pydantic import pydantic_model_creator
 from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
@@ -15,16 +14,15 @@ from app.core.security import (
     require_active_user,
     require_roles,
 )
-from app.models.oauth import OAuthAccount
 from app.models.user import Role, User
+from app.oauth.factory import require_oauth_provider
+from app.oauth.service import InactiveOAuthUserError, authenticate_oauth_user
+from app.oauth.types import OAuthProvider, OAuthProviderError
 from app.schemas.user import RoleCreate, RoleOut, UserCreateExtra, UserOut, UserRead
 
 settings = get_settings()
 
 
-oauth_client: GoogleOAuth2 | None = None
-if settings.google_client_id and settings.google_client_secret:
-    oauth_client = GoogleOAuth2(settings.google_client_id, settings.google_client_secret)
 # ----- Role schemas ----------------------------------------------------------
 RoleRead = pydantic_model_creator(Role, name="RoleRead")
 
@@ -73,36 +71,40 @@ async def register(payload: UserCreateExtra):
     return await UserRead.from_tortoise_orm(user)
 
 
-if oauth_client:
+@_auth.get("/oauth/login")
+@public
+async def oauth_login(provider: OAuthProvider = Depends(require_oauth_provider)):
+    try:
+        redirect_url = await provider.authorization_url(settings.oauth_redirect_uri)
+    except OAuthProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="OAuth provider is unavailable",
+        ) from exc
+    return RedirectResponse(redirect_url)
 
-    @_auth.get("/google/login")
-    @public
-    async def google_login():
-        redirect = await oauth_client.get_authorization_url(
-            settings.google_redirect_uri,
-            scope=("openid", "email", "profile"),
-            prompt="consent",
-        )
-        return RedirectResponse(redirect)
 
-    @_auth.get("/google/callback", response_model=UserRead)
-    @public
-    async def google_callback(code: str):
-        token_data = await oauth_client.get_access_token(code, settings.google_redirect_uri)
-        info = await oauth_client.get_id_email(token_data["access_token"])
-        user = await User.get_or_none(email=info["email"])
-        if not user:
-            user = await User.create(email=info["email"], hashed_password="google")
-        await OAuthAccount.update_or_create(
-            {
-                "access_token": token_data["access_token"],
-                "refresh_token": token_data.get("refresh_token"),
-            },
-            provider="google",
-            subject=info["sub"],
-            user=user,
-        )
-        return await UserRead.from_tortoise_orm(user)
+@_auth.get("/oauth/callback")
+@public
+async def oauth_callback(
+    code: str,
+    provider: OAuthProvider = Depends(require_oauth_provider),
+):
+    try:
+        user = await authenticate_oauth_user(provider, code, settings.oauth_redirect_uri)
+    except InactiveOAuthUserError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user",
+        ) from exc
+    except OAuthProviderError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="OAuth authentication failed",
+        ) from exc
+
+    access_token = create_access_token({"sub": str(user.id)})
+    return {"access_token": access_token, "token_type": "bearer"}
 
 
 # ------------ User admin endpoints -----------------------------------------
