@@ -17,14 +17,14 @@ async def authenticate_oauth_user(
     code: str,
     redirect_uri: str,
 ) -> User:
-    authentication = await provider.exchange_code(code, redirect_uri)
-    email = authentication.identity.email.strip().lower()
+    identity = await provider.exchange_code(code, redirect_uri)
+    email = identity.email.strip().lower()
 
     async with in_transaction() as connection:
         account = await (
             OAuthAccount.filter(
                 provider=provider.name,
-                subject=authentication.identity.subject,
+                subject=identity.subject,
             )
             .using_db(connection)
             .select_for_update()
@@ -51,23 +51,11 @@ async def authenticate_oauth_user(
                     hashed_password=pwd_context.hash(secrets.token_urlsafe(32)),
                 )
 
-            account = await OAuthAccount.create(
+            await OAuthAccount.create(
                 using_db=connection,
                 provider=provider.name,
-                subject=authentication.identity.subject,
+                subject=identity.subject,
                 user_id=user.id,
-                access_token=authentication.credentials.access_token,
-                refresh_token=authentication.credentials.refresh_token,
-                expires_at=authentication.credentials.expires_at,
             )
-
-        account.access_token = authentication.credentials.access_token
-        if authentication.credentials.refresh_token is not None:
-            account.refresh_token = authentication.credentials.refresh_token
-        account.expires_at = authentication.credentials.expires_at
-        await account.save(
-            using_db=connection,
-            update_fields=("access_token", "refresh_token", "expires_at"),
-        )
 
     return user

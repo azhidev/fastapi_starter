@@ -52,11 +52,15 @@ The hardening work completed so far establishes the following foundation:
 - Pytest, Ruff, and GitHub Actions CI are wired into the project;
 - API-level tests cover key authentication and authorization behavior;
 - business-specific models, routes, and runtime dependencies have been removed;
-- OAuth authorization, callback exchange, identity normalization, account linking, and JWT login use a provider-neutral core with a tested Google adapter.
+- OAuth authorization, callback exchange, identity normalization, account linking, and JWT login use a provider-neutral core with a tested Google adapter;
+- bearer-token errors, inactive-user enforcement, public documentation routes, and auth-resource identifiers behave consistently;
+- production configuration rejects debug mode, weak known secrets, invalid OAuth combinations, and non-HTTPS OAuth redirects.
 
 ### OAuth architecture
 
 The authentication core depends on a small OAuth provider contract rather than Google-specific behavior. Google is the single reference adapter; provider selection and callback configuration are environment-driven, and normal tests replace the provider boundary without making third-party network calls.
+
+Provider access and refresh tokens are intentionally transient. The starter uses them only to retrieve identity during the callback and persists only the provider name, provider subject, and local user link. This avoids retaining third-party credentials when the starter has no feature that needs later provider API access.
 
 ## Project Readiness Definition
 
@@ -164,7 +168,7 @@ Completed work:
 - defined a minimal OAuth provider contract for authorization URLs and normalized callback results;
 - isolated Google token exchange and identity normalization in a reference adapter;
 - made provider selection and redirect configuration explicit through environment settings;
-- moved account creation, email-based linking, token persistence, inactive-user handling, and JWT login into a provider-neutral service;
+- moved account creation, email-based linking, provider-aware identity persistence, inactive-user handling, and JWT login into a provider-neutral service;
 - replaced Google-specific routes with generic OAuth login and callback endpoints;
 - added provider-boundary and account-link/login tests that make no live third-party calls.
 
@@ -172,18 +176,18 @@ Do **not** add GitHub, Microsoft, Discord, or other providers merely to demonstr
 
 **Completion condition:** authentication core code does not depend on Google-specific behavior, while one reference provider still works through the generic path.
 
-### Phase 9 — Final API and security consistency
+### Phase 9 — Final API and security consistency ✅
 
 **Goal:** make the remaining starter surface coherent enough to reuse without cleanup on every new project.
 
-Scope:
+Completed work:
 
-- standardize authentication/authorization errors and HTTP status codes;
-- review public-route opt-out behavior and secure-by-default routing;
-- review secret/config validation and production-safe defaults;
-- review token lifetime and OAuth token persistence decisions;
-- remove dead compatibility code and stale configuration;
-- keep abstractions only when they reduce duplication or isolate a real boundary.
+- standardized bearer authentication errors, headers, inactive-user behavior, HTTP status constants, and auth-resource path validation;
+- kept private routes secure by default while explicitly allowing root, authentication, OpenAPI, Swagger, OAuth redirect, and ReDoc paths;
+- bounded token lifetime and port settings and added production validation for debug mode, known weak secrets, OAuth credentials, and HTTPS redirects;
+- typed JWTs as access tokens and rejected legacy or unknown token shapes;
+- removed persisted OAuth access/refresh tokens because no starter capability needs later provider API access;
+- removed dead dependency, logging, task, and compatibility code while retaining only boundary-serving abstractions.
 
 Do not add rate limiting, Redis-backed sessions, queues, metrics stacks, or background workers unless a concrete capability is selected that requires them.
 
@@ -279,7 +283,7 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
 
-The generic flow uses `GET /api/v1/auth/oauth/login` and `GET /api/v1/auth/oauth/callback`. The callback links a provider identity to an existing normalized email when possible, creates an OAuth-only user otherwise, rejects inactive users, persists provider-aware credentials, and returns a JWT access token. When configuration is absent, the OAuth endpoints return `503` rather than exposing a partially initialized flow.
+The generic flow uses `GET /api/v1/auth/oauth/login` and `GET /api/v1/auth/oauth/callback`. The callback links a provider identity to an existing normalized email when possible, creates an OAuth-only user otherwise, rejects inactive users, persists only the provider identity link, and returns a JWT access token. Provider access and refresh tokens are not stored. When configuration is absent, the OAuth endpoints return `503` rather than exposing a partially initialized flow.
 
 ### Quality checks
 
@@ -322,4 +326,4 @@ These are **extension points, not roadmap requirements**.
 
 ## Status
 
-The project is currently in the hardening/refactoring stage. Phases 1–8 are implemented; Phase 9 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.
+The project is currently in the hardening/refactoring stage. Phases 1–9 are implemented; Phase 10 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.

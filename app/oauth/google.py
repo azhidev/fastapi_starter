@@ -1,14 +1,6 @@
-from datetime import datetime, timedelta, timezone
-from typing import Any
-
 from httpx_oauth.clients.google import GoogleOAuth2
 
-from app.oauth.types import (
-    OAuthAuthentication,
-    OAuthCredentials,
-    OAuthIdentity,
-    OAuthProviderError,
-)
+from app.oauth.types import OAuthIdentity, OAuthProviderError
 
 
 class GoogleOAuthProvider:
@@ -32,7 +24,7 @@ class GoogleOAuthProvider:
         except Exception as exc:
             raise OAuthProviderError("Could not create OAuth authorization URL") from exc
 
-    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthAuthentication:
+    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthIdentity:
         try:
             token_data = await self._client.get_access_token(code, redirect_uri)
             access_token = token_data.get("access_token")
@@ -50,25 +42,4 @@ class GoogleOAuthProvider:
         if not isinstance(email, str) or not email:
             raise OAuthProviderError("OAuth provider returned no email")
 
-        refresh_token = token_data.get("refresh_token")
-        return OAuthAuthentication(
-            identity=OAuthIdentity(subject=subject, email=email.strip().lower()),
-            credentials=OAuthCredentials(
-                access_token=access_token,
-                refresh_token=refresh_token if isinstance(refresh_token, str) else None,
-                expires_at=_token_expiration(token_data),
-            ),
-        )
-
-
-def _token_expiration(token_data: dict[str, Any]) -> datetime | None:
-    expires_at = token_data.get("expires_at")
-    if isinstance(expires_at, datetime):
-        return expires_at if expires_at.tzinfo else expires_at.replace(tzinfo=timezone.utc)
-    if isinstance(expires_at, (int, float)):
-        return datetime.fromtimestamp(expires_at, tz=timezone.utc)
-
-    expires_in = token_data.get("expires_in")
-    if isinstance(expires_in, (int, float)):
-        return datetime.now(timezone.utc) + timedelta(seconds=expires_in)
-    return None
+        return OAuthIdentity(subject=subject, email=email.strip().lower())

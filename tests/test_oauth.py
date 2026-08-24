@@ -1,6 +1,4 @@
 import asyncio
-from datetime import datetime, timezone
-
 from fastapi.testclient import TestClient
 from tortoise import Tortoise
 
@@ -11,7 +9,7 @@ from app.models.user import User
 from app.oauth import factory as oauth_factory
 from app.oauth.factory import require_oauth_provider
 from app.oauth.google import GoogleOAuthProvider
-from app.oauth.types import OAuthAuthentication, OAuthCredentials, OAuthIdentity
+from app.oauth.types import OAuthIdentity
 from main import app
 
 
@@ -47,8 +45,6 @@ class FakeOAuthProvider:
     def __init__(self, subject: str = "subject-1", email: str = "oauth@example.com") -> None:
         self.subject = subject
         self.email = email
-        self.access_token = "access-token-1"
-        self.refresh_token = "refresh-token-1"
         self.authorization_calls: list[str] = []
         self.exchange_calls: list[tuple[str, str]] = []
 
@@ -56,16 +52,9 @@ class FakeOAuthProvider:
         self.authorization_calls.append(redirect_uri)
         return "https://provider.example/authorize"
 
-    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthAuthentication:
+    async def exchange_code(self, code: str, redirect_uri: str) -> OAuthIdentity:
         self.exchange_calls.append((code, redirect_uri))
-        return OAuthAuthentication(
-            identity=OAuthIdentity(subject=self.subject, email=self.email),
-            credentials=OAuthCredentials(
-                access_token=self.access_token,
-                refresh_token=self.refresh_token,
-                expires_at=datetime(2030, 1, 1, tzinfo=timezone.utc),
-            ),
-        )
+        return OAuthIdentity(subject=self.subject, email=self.email)
 
 
 def _override_provider(provider: FakeOAuthProvider) -> None:
@@ -76,16 +65,12 @@ def _clear_provider_override() -> None:
     app.dependency_overrides.pop(require_oauth_provider, None)
 
 
-async def _oauth_snapshot(provider: str, subject: str) -> tuple[int, int, str, str | None]:
+async def _oauth_snapshot(provider: str, subject: str) -> tuple[int, int]:
     await Tortoise.init(config=TORTOISE_ORM)
     try:
         account = await OAuthAccount.get(provider=provider, subject=subject)
-        return (
-            await User.all().count(),
-            await OAuthAccount.all().count(),
-            account.access_token,
-            account.refresh_token,
-        )
+        assert account.user_id
+        return await User.all().count(), await OAuthAccount.all().count()
     finally:
         await Tortoise.close_connections()
 
@@ -122,15 +107,9 @@ def test_google_provider_normalizes_the_external_boundary():
         "authorization-code",
         "https://api.example/oauth/callback",
     )
-    assert authentication.identity == OAuthIdentity(
+    assert authentication == OAuthIdentity(
         subject="google-subject",
         email="user@example.com",
-    )
-    assert authentication.credentials.access_token == "google-access-token"
-    assert authentication.credentials.refresh_token == "google-refresh-token"
-    assert authentication.credentials.expires_at == datetime.fromtimestamp(
-        1_900_000_000,
-        tz=timezone.utc,
     )
 
 
@@ -177,8 +156,6 @@ def test_oauth_callback_creates_and_reuses_account_with_jwt_login(fresh_database
             assert first_user.status_code == 200, first_user.text
             assert first_user.json()["email"] == "oauth@example.com"
 
-            provider.access_token = "access-token-2"
-            provider.refresh_token = "refresh-token-2"
             second_callback = client.get(
                 "/api/v1/auth/oauth/callback",
                 params={"code": "second-code"},
@@ -194,7 +171,7 @@ def test_oauth_callback_creates_and_reuses_account_with_jwt_login(fresh_database
         _clear_provider_override()
 
     snapshot = asyncio.run(_oauth_snapshot(provider.name, provider.subject))
-    assert snapshot == (2, 1, "access-token-2", "refresh-token-2")
+    assert snapshot == (2, 1)
 
 
 def test_oauth_callback_links_an_existing_user_by_normalized_email(fresh_database):
@@ -225,7 +202,7 @@ def test_oauth_callback_links_an_existing_user_by_normalized_email(fresh_databas
         _clear_provider_override()
 
     snapshot = asyncio.run(_oauth_snapshot(provider.name, provider.subject))
-    assert snapshot[:2] == (2, 1)
+    assert snapshot == (2, 1)
 
 
 def test_oauth_callback_rejects_inactive_linked_user(fresh_database):

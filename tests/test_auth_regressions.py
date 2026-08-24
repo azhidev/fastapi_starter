@@ -7,7 +7,7 @@ from tortoise import Tortoise
 
 from app.api.v1.users import pwd_context
 from app.core import security
-from app.core.security import DUMMY_PASSWORD_HASH, verify_token
+from app.core.security import DUMMY_PASSWORD_HASH, create_access_token, verify_token
 from app.db.tortoise import TORTOISE_ORM
 from app.models.user import Role, User
 from main import app
@@ -125,6 +125,23 @@ def test_invalid_and_inactive_logins_use_generic_errors_and_dummy_verification(
 
     assert verified_hashes[0] != DUMMY_PASSWORD_HASH
     assert verified_hashes[1:] == [DUMMY_PASSWORD_HASH, DUMMY_PASSWORD_HASH]
+
+
+def test_inactive_user_bearer_is_rejected(client_with_inactive_users):
+    admin_headers = _admin_headers(client_with_inactive_users)
+    users = client_with_inactive_users.get("/api/v1/admin/", headers=admin_headers)
+    inactive_user = next(
+        user for user in users.json() if user["username"] == "inactive-user"
+    )
+    token = create_access_token({"sub": inactive_user["id"]})
+
+    response = client_with_inactive_users.get(
+        "/api/v1/users/me",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Inactive user"}
 
 
 def test_login_uses_configured_jwt_lifetime(client, monkeypatch):

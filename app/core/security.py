@@ -1,5 +1,5 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Optional
+from typing import Any, Callable
 
 from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import OAuth2PasswordBearer
@@ -23,29 +23,35 @@ DUMMY_PASSWORD_HASH = (
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/v1/auth/login", auto_error=False)
 
 
-def create_access_token(data: dict[str, Any], expires_delta: timedelta | None = None) -> str:
+def create_access_token(data: dict[str, Any]) -> str:
+    now = datetime.now(timezone.utc)
     to_encode = data.copy()
-    lifetime = (
-        expires_delta
-        if expires_delta is not None
-        else timedelta(seconds=settings.jwt_lifetime_seconds)
+    to_encode.update(
+        {
+            "iat": now,
+            "exp": now + timedelta(seconds=settings.jwt_lifetime_seconds),
+            "type": "access",
+        }
     )
-    to_encode.update({"exp": datetime.now(timezone.utc) + lifetime})
     return jwt.encode(to_encode, settings.secret, algorithm=ALGORITHM)
 
 
-def verify_token(token: str) -> Optional[dict[str, Any]]:
+def verify_token(token: str) -> dict[str, Any] | None:
     try:
-        return jwt.decode(token, settings.secret, algorithms=[ALGORITHM])
+        payload = jwt.decode(token, settings.secret, algorithms=[ALGORITHM])
     except JWTError:
         return None
+    if payload.get("type") != "access":
+        return None
+    return payload
+
 
 async def _user_from_token(token: str) -> "User":
     payload = verify_token(token)
     if not payload or not (user_id := payload.get("sub")):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid token",
+            detail="Invalid authentication credentials",
             headers=AUTHENTICATE_HEADERS,
         )
 
@@ -54,13 +60,13 @@ async def _user_from_token(token: str) -> "User":
         # do not leak whether the user exists
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="Invalid authentication credentials",
             headers=AUTHENTICATE_HEADERS,
         )
     return user
 
 # STRICT: raises 401 if token missing/invalid
-async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> "User":
+async def get_current_user(token: str | None = Depends(oauth2_scheme)) -> "User":
     if not token:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -69,23 +75,15 @@ async def get_current_user(token: Optional[str] = Depends(oauth2_scheme)) -> "Us
         )
     return await _user_from_token(token)
 
-# OPTIONAL: returns None if token missing/invalid (useful for public routes / global guard)
-async def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme)) -> Optional["User"]:
+async def get_current_user_optional(
+    token: str | None = Depends(oauth2_scheme),
+) -> User | None:
     if not token:
         return None
-    try:
-        return await _user_from_token(token)
-    except HTTPException:
-        return None
+    return await _user_from_token(token)
 
-PUBLIC_PATHS = {"/docs", "/openapi.json"}  # your list
 
-# Public paths that should skip auth entirely
-# PUBLIC_PATHS: Final[frozenset[str]] = frozenset(
-#     {
-#         # "/",
-#     }
-# )
+PUBLIC_PATHS = frozenset({"/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc"})
 
 
 def _normalize(path: str) -> str:
@@ -106,32 +104,26 @@ def public(func: Callable[..., Any]) -> Callable[..., Any]:
 # ---- Global dependency -----------------------------------------------------
 async def user_authentication(
     request: Request,
-    maybe_user: Optional["User"] = Depends(get_current_user_optional),
+    maybe_user: User | None = Depends(get_current_user_optional),
 ) -> None:
     path = _normalize(request.url.path)
     endpoint = request.scope.get("endpoint")
     is_public = (path in PUBLIC_PATHS) or bool(getattr(endpoint, "_is_public", False))
 
-    # attach user if present
     if maybe_user:
         request.state.user = maybe_user
 
-    # if private, a valid user is required
     if not is_public and not maybe_user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Not authenticated",
             headers=AUTHENTICATE_HEADERS,
         )
-
-
-def can(role_name: str):
-    async def checker(user: User = Depends(require_active_user)):
-        if not await user.roles.filter(name=role_name).exists():
-            raise HTTPException(status_code=403, detail="Insufficient role")
-        return user
-
-    return Depends(checker)
+    if not is_public and not maybe_user.is_active:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Inactive user",
+        )
 
 
 def require_active_user(user: User = Depends(get_current_user)) -> User:

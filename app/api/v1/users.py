@@ -6,7 +6,9 @@ from tortoise.exceptions import IntegrityError
 from tortoise.transactions import in_transaction
 
 from app.core.config import get_settings
+from app.core.identifiers import RoleNamePath, XIDPath
 from app.core.security import (
+    AUTHENTICATE_HEADERS,
     DUMMY_PASSWORD_HASH,
     create_access_token,
     public,
@@ -48,7 +50,7 @@ async def login(form: OAuth2PasswordRequestForm = Depends()):
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
+            headers=AUTHENTICATE_HEADERS,
         )
     access = create_access_token({"sub": str(user.id)})
     return {"access_token": access, "token_type": "bearer"}
@@ -109,8 +111,11 @@ async def oauth_callback(
 
 # ------------ User admin endpoints -----------------------------------------
 
-@_admin.get("/", response_model=list[UserRead],
-            dependencies=[Depends(require_roles("admin"))])
+@_admin.get(
+    "/",
+    response_model=list[UserRead],
+    dependencies=[Depends(require_roles("admin"))],
+)
 async def list_users():
     return await UserRead.from_queryset(User.all())
 
@@ -121,26 +126,26 @@ async def get_current_user(user: User = Depends(require_active_user)):
         id=user.id,
         username=user.username,
         email=user.email,
-        roles=[RoleOut(id=r.id, name=r.name, description=r.description) for r in user.roles]
+        roles=[RoleOut(id=r.id, name=r.name, description=r.description) for r in user.roles],
     )
 
 
 @_users.get("/{user_id}", response_model=UserRead)
-async def get_user(user_id: str, current_user: User = Depends(require_active_user)):
+async def get_user(user_id: XIDPath, current_user: User = Depends(require_active_user)):
     if current_user.id != user_id:
         await current_user.can("admin")
 
     if (user := await User.get_or_none(id=user_id)) is None:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return await UserRead.from_tortoise_orm(user)
 
 
 @_users.post(
     "/{user_id}/roles/{role_name}",
-    status_code=204,
+    status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_roles("admin"))],
 )
-async def assign_role(user_id: str, role_name: str):
+async def assign_role(user_id: XIDPath, role_name: RoleNamePath):
     async with in_transaction() as connection:
         role = await (
             Role.filter(name=role_name)
@@ -155,16 +160,16 @@ async def assign_role(user_id: str, role_name: str):
             .first()
         )
         if not user or not role:
-            raise HTTPException(404, "User or role not found")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User or role not found")
         await user.roles.add(role, using_db=connection)
 
 
 @_users.delete(
     "/{user_id}/roles/{role_name}",
-    status_code=204,
+    status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_roles("admin"))],
 )
-async def remove_role(user_id: str, role_name: str):
+async def remove_role(user_id: XIDPath, role_name: RoleNamePath):
     async with in_transaction() as connection:
         # The role row is the stable lock shared by concurrent mutations, including
         # removals targeting different users.
@@ -181,7 +186,7 @@ async def remove_role(user_id: str, role_name: str):
             .first()
         )
         if not user or not role:
-            raise HTTPException(404, "User or role not found")
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "User or role not found")
 
         has_role = await (
             User.filter(id=user.id, roles__id=role.id).using_db(connection).exists()
@@ -205,7 +210,7 @@ async def remove_role(user_id: str, role_name: str):
 
 @_users.get("/{user_id}/roles", response_model=list[RoleRead])
 async def list_user_roles(
-    user_id: str,
+    user_id: XIDPath,
     current_user: User = Depends(require_active_user),
 ):
     if current_user.id != user_id:
@@ -213,7 +218,7 @@ async def list_user_roles(
 
     user = await User.get_or_none(id=user_id)
     if not user:
-        raise HTTPException(404, "User not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
     return await RoleRead.from_queryset(user.roles.all())
 
 
@@ -229,7 +234,7 @@ async def list_roles():
 @_roles.post(
     "/",
     response_model=RoleRead,
-    status_code=201,
+    status_code=status.HTTP_201_CREATED,
     dependencies=[Depends(require_roles("admin"))],
 )
 async def create_role(payload: RoleCreate):
@@ -245,13 +250,13 @@ async def create_role(payload: RoleCreate):
 
 @_roles.delete(
     "/{role_id}",
-    status_code=204,
+    status_code=status.HTTP_204_NO_CONTENT,
     dependencies=[Depends(require_roles("admin"))],
 )
-async def delete_role(role_id: str):
+async def delete_role(role_id: XIDPath):
     role = await Role.get_or_none(id=role_id)
     if not role:
-        raise HTTPException(404, "Role not found")
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Role not found")
     if role.name == "admin":
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
