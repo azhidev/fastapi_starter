@@ -14,10 +14,11 @@ class GoogleOAuthProvider:
     ) -> None:
         self._client = client or GoogleOAuth2(client_id, client_secret)
 
-    async def authorization_url(self, redirect_uri: str) -> str:
+    async def authorization_url(self, redirect_uri: str, state: str) -> str:
         try:
             return await self._client.get_authorization_url(
                 redirect_uri,
+                state=state,
                 scope=("openid", "email", "profile"),
                 prompt="consent",
             )

@@ -6,7 +6,6 @@ COMPOSE ?= docker compose
 	init migration migrate clean install install-dev run dev env test lint check \
 	bootstrap-admin \
 	docker-build docker-up docker-restart docker-down docker-logs docker-ps docker-migrate \
-	build-docker run-docker stop-docker \
 	patch-apply patch-export
 
 init:
@@ -83,10 +82,6 @@ docker-ps:
 docker-migrate: env
 	$(COMPOSE) run --rm migrate
 
-# Backward-compatible aliases.
-build-docker: docker-build
-run-docker: docker-up
-stop-docker: docker-down
 
 # Patch workflow --------------------------------------------------------------
 PATCH ?= changes.patch

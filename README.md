@@ -1,280 +1,265 @@
 # FastAPI Starter
 
-A small, production-oriented FastAPI starter focused on **reliability, security, and clean integration** rather than feature count.
+A small, production-oriented FastAPI foundation focused on authentication, authorization, predictable migrations, secure configuration, and an understandable development workflow.
 
-This repository serves two purposes:
+The starter deliberately excludes business-specific example models and speculative infrastructure. It provides a reusable authentication core that can be extended by a real application rather than a framework that must first be dismantled.
 
-1. a dependable starting point for future backend projects;
-2. a portfolio-quality example of practical backend engineering.
+## Status
 
-The project is still being hardened. The business-specific example domain has been removed, and OAuth now uses a provider-neutral authentication core with Google retained as the reference adapter.
+The implementation roadmap through release-quality documentation is complete. The current baseline includes JWT authentication, role-based authorization, provider-neutral OAuth with a Google reference adapter, PostgreSQL migrations, Docker application services, tests, linting, and CI.
 
-## Product Principle
+The repository has not been tagged as a release and no license has been selected yet. Choose a license before public redistribution.
 
-> Prefer one feature that works end-to-end over many features that are only partially integrated.
+## Features
 
-Every addition should have a concrete use case, fit the existing architecture, and be covered by the appropriate tests. Infrastructure must not be added only because it is common in production systems.
+- FastAPI lifecycle with explicit database connection startup and shutdown
+- PostgreSQL persistence through Tortoise ORM
+- Aerich-managed, migration-only schema changes
+- Password registration and Argon2 password hashing
+- JWT access tokens with bounded, configurable lifetime
+- Active-user enforcement and secure-by-default private routes
+- Role-based authorization with last-active-admin protection
+- Provider-neutral OAuth account linking and JWT login
+- Google OAuth reference adapter
+- Stateless OAuth CSRF protection through a short-lived HttpOnly state cookie
+- Environment-driven CORS and production configuration validation
+- Non-root Docker image and deterministic migration-before-API startup
+- Pytest regression coverage, Ruff, and GitHub Actions CI
+- No Project, Task, or other business-domain API surface
+- No Redis, queues, workers, metrics stack, or other optional infrastructure by default
 
-In particular, **Redis, Kafka, Prometheus, Celery, and similar infrastructure are not part of the default target**. They should be introduced only when a real feature creates a clear requirement for them.
+## Requirements
 
-## Target
+- Python 3.10
+- PostgreSQL; CI and development validation use PostgreSQL 16
+- `make`
+- Docker with Compose support for the optional containerized application workflow
 
-The finished starter should provide a balanced foundation for building backend services without becoming an enterprise framework.
+PostgreSQL is an external dependency. This repository's Compose file does not create or own a database container.
 
-The target includes:
+## Quick Start
 
-- FastAPI application lifecycle with explicit configuration;
-- PostgreSQL with Aerich-managed migrations;
-- JWT authentication;
-- role-based authorization with secure defaults;
-- a provider-agnostic OAuth architecture with at least one working reference provider;
-- Docker-based local development;
-- tests for security-critical and core application behavior;
-- Ruff linting and CI;
-- clear operational and development documentation;
-- no business-specific domain models in the starter core.
-
-The target explicitly does **not** include speculative infrastructure or abstractions that have no demonstrated use in the starter.
-
-## Current State
-
-The hardening work completed so far establishes the following foundation:
-
-- runtime and configuration blockers have been fixed;
-- user registration and authentication behavior has been corrected;
-- role-management privilege escalation has been restricted;
-- authentication and authorization boundaries have focused regression coverage;
-- database schema creation has been removed from application startup;
-- Aerich migrations are the schema source of truth;
-- application lifecycle and CORS configuration are environment-driven;
-- a Dockerfile and Docker Compose development workflow are available;
-- Compose runs one-shot migrations against a configured PostgreSQL database before starting the API;
-- Pytest, Ruff, and GitHub Actions CI are wired into the project;
-- API-level tests cover key authentication and authorization behavior;
-- business-specific models, routes, and runtime dependencies have been removed;
-- OAuth authorization, callback exchange, identity normalization, account linking, and JWT login use a provider-neutral core with a tested Google adapter;
-- bearer-token errors, inactive-user enforcement, public documentation routes, and auth-resource identifiers behave consistently;
-- production configuration rejects debug mode, weak known secrets, invalid OAuth combinations, and non-HTTPS OAuth redirects.
-
-### OAuth architecture
-
-The authentication core depends on a small OAuth provider contract rather than Google-specific behavior. Google is the single reference adapter; provider selection and callback configuration are environment-driven, and normal tests replace the provider boundary without making third-party network calls.
-
-Provider access and refresh tokens are intentionally transient. The starter uses them only to retrieve identity during the callback and persists only the provider name, provider subject, and local user link. This avoids retaining third-party credentials when the starter has no feature that needs later provider API access.
-
-## Project Readiness Definition
-
-The starter is considered ready when all of the following are true:
-
-- a clean checkout can be configured without editing source code;
-- local and Docker development paths are documented and work predictably;
-- an empty PostgreSQL database can be brought to the latest schema exclusively through migrations;
-- application startup never creates or mutates database schemas implicitly;
-- JWT registration, login, authentication, inactive-user handling, and authorization work end-to-end;
-- role-management rules prevent privilege escalation and are covered by tests;
-- OAuth provider code is separated from the authentication core through a small provider abstraction;
-- at least one OAuth provider works through that abstraction and is tested at the integration boundary;
-- the starter contains no `Project`, `Task`, or other business-specific domain models/routes;
-- public and protected route behavior is intentional and tested;
-- configuration has secure, understandable defaults and no committed secrets;
-- Docker services have deterministic startup dependencies and migrations run once before the API starts;
-- linting and tests pass locally and in CI;
-- error behavior does not expose internal database or implementation details;
-- the repository has concise documentation explaining setup, architecture, extension points, and security decisions;
-- optional infrastructure is absent unless a concrete starter capability requires it.
-
-## Roadmap
-
-This roadmap is written to be executable incrementally by a developer or coding agent such as Codex. Complete one phase before expanding the scope.
-
-### Phase 1 — Runtime baseline ✅
-
-**Goal:** make the existing application safe to continue modifying.
-
-Completed work includes runtime fixes, correct ID factories, registration cleanup, OAuth initialization fixes, safer environment examples, startup script cleanup, and a non-destructive Makefile workflow.
-
-**Completion condition:** the application source has no known startup blocker caused by the original baseline and project maintenance commands do not delete source or migration history.
-
-### Phase 2 — Authorization and ownership ✅
-
-**Goal:** make authentication meaningful by enforcing authorization boundaries.
-
-Completed work includes admin-only role management, self/admin user access rules, inactive-user checks, ownership enforcement for the temporary Project/Task domain, safer not-found behavior, and local first-admin bootstrapping.
-
-**Completion condition:** a normal authenticated user cannot elevate privileges or access another user's protected resources through guessed identifiers.
-
-### Phase 3 — Lifecycle and configuration ✅
-
-**Goal:** make application startup and configuration predictable.
-
-Completed work includes explicit database initialization/shutdown, migration-only schema management, environment-driven CORS, centralized settings, and consistent Uvicorn configuration.
-
-**Completion condition:** startup manages connections only; schema changes happen only through migrations; runtime behavior comes from validated settings.
-
-### Phase 4 — Docker and developer workflow ✅
-
-**Goal:** provide one understandable containerized development path.
-
-Completed work includes a non-root application image, one Compose topology for the application, a one-shot migration service against an existing PostgreSQL database, API startup dependencies, and focused Makefile helpers.
-
-**Completion condition:** the container architecture has one responsibility per service and does not duplicate database or migration workflows.
-
-### Phase 5 — Core tests, linting, and CI ✅
-
-**Goal:** prove that the integrated core behaves correctly before adding more architecture.
-
-Completed work includes focused Pytest API tests, Ruff, GitHub Actions, PostgreSQL migration validation in CI, and activation of the temporary Project/Task routes used for ownership testing.
-
-**Completion condition:** security-critical behaviors are represented by tests and the same quality checks can run locally and in CI.
-
-### Phase 6 — Stabilize the current core ✅
-
-**Goal:** fix behavior exposed by real end-to-end use before changing the domain architecture.
-
-Completed work:
-
-- exercised authentication and the temporary Project/Task flows end-to-end;
-- made registration, login, inactive-user, role-management, delete, and ownership behavior deterministic;
-- added transaction boundaries for role mutations and Project/Task race-sensitive operations;
-- corrected active-core migration safety, restored user-role uniqueness, and neutralized an obsolete migration blocker;
-- verified two coordinated Docker restarts against an existing PostgreSQL database;
-- added focused regression coverage without introducing new product features.
-
-Do not introduce new product features in this phase.
-
-**Completion condition:** known core flows are deterministic, security rules have regression coverage, and no unresolved integration bug is being hidden by the next refactor.
-
-### Phase 7 — Remove the example business domain ✅
-
-**Goal:** turn the repository from a task-management example into a genuinely generic starter.
-
-Completed work:
-
-- removed Project and Task models, schemas, repositories, routes, and router registration;
-- removed domain-specific tests after preserving their security intent in authentication and authorization coverage;
-- removed runtime ORM registration for the example domain and deleted its now-unused layering;
-- added an append-only migration that removes Project, Task, and other leftover business-domain tables while preserving authentication data and existing migration history;
-- verified that the generated API schema no longer exposes the example business domain;
-- avoided replacing Project/Task with another arbitrary example domain.
-
-**Completion condition:** the starter core contains authentication/infrastructure concerns only and no business-specific API surface.
-
-### Phase 8 — Generic OAuth architecture ✅
-
-**Goal:** preserve OAuth capability without coupling the authentication core to Google.
-
-Completed work:
-
-- defined a minimal OAuth provider contract for authorization URLs and normalized callback results;
-- isolated Google token exchange and identity normalization in a reference adapter;
-- made provider selection and redirect configuration explicit through environment settings;
-- moved account creation, email-based linking, provider-aware identity persistence, inactive-user handling, and JWT login into a provider-neutral service;
-- replaced Google-specific routes with generic OAuth login and callback endpoints;
-- added provider-boundary and account-link/login tests that make no live third-party calls.
-
-Do **not** add GitHub, Microsoft, Discord, or other providers merely to demonstrate extensibility. A second provider should be added only when there is an actual requirement.
-
-**Completion condition:** authentication core code does not depend on Google-specific behavior, while one reference provider still works through the generic path.
-
-### Phase 9 — Final API and security consistency ✅
-
-**Goal:** make the remaining starter surface coherent enough to reuse without cleanup on every new project.
-
-Completed work:
-
-- standardized bearer authentication errors, headers, inactive-user behavior, HTTP status constants, and auth-resource path validation;
-- kept private routes secure by default while explicitly allowing root, authentication, OpenAPI, Swagger, OAuth redirect, and ReDoc paths;
-- bounded token lifetime and port settings and added production validation for debug mode, known weak secrets, OAuth credentials, and HTTPS redirects;
-- typed JWTs as access tokens and rejected legacy or unknown token shapes;
-- removed persisted OAuth access/refresh tokens because no starter capability needs later provider API access;
-- removed dead dependency, logging, task, and compatibility code while retaining only boundary-serving abstractions.
-
-Do not add rate limiting, Redis-backed sessions, queues, metrics stacks, or background workers unless a concrete capability is selected that requires them.
-
-**Completion condition:** the starter has a small, internally consistent API/security foundation with no known dead paths or misleading configuration.
-
-### Phase 10 — Release-quality documentation and repository polish
-
-**Goal:** make the repository understandable to a new developer without reading the source first.
-
-Scope:
-
-- convert this roadmap-oriented README into the final user-facing README while retaining a short maintenance roadmap;
-- document local setup, Docker setup, migrations, authentication, OAuth extension, configuration, tests, and CI;
-- document the final project structure and important architectural decisions;
-- add repository metadata such as description, topics, and license when selected;
-- ensure every advertised feature is implemented and tested before listing it as a capability;
-- prepare the first stable release only after the readiness definition above is satisfied.
-
-**Completion condition:** the repository accurately describes what it does, how to run it, how to extend it, and where its intentional boundaries are.
-
-## Guidance for Codex / Coding Agents
-
-When continuing work on this repository, follow these rules:
-
-1. **Read this README and the current code before proposing changes.** Treat the roadmap as intent, but treat the code and tests as the source of truth for current behavior.
-2. **Work on one roadmap phase at a time.** Do not mix unrelated refactors, infrastructure, and features into the same patch.
-3. **Prefer incremental patches.** Changes should be reviewable, reversible, and narrow enough to understand from the diff.
-4. **Preserve working behavior unless the active phase intentionally changes it.** Add or update regression tests when changing security or externally visible behavior.
-5. **Do not add speculative infrastructure.** Redis, Kafka, Prometheus, Celery, Elasticsearch, Kubernetes, and similar tools require a concrete feature-level justification.
-6. **Do not create abstraction for its own sake.** Introduce an interface/layer only when it isolates a real boundary, reduces meaningful duplication, or enables the stated target architecture.
-7. **Keep the starter generic.** Do not introduce a new business domain after Project/Task are removed.
-8. **Keep authentication cohesive.** JWT and generic OAuth belong to one authentication design; avoid parallel authentication systems that do not share user/account rules.
-9. **Keep migrations authoritative.** Application startup must not generate schemas.
-10. **Never advertise unfinished capability.** Documentation should distinguish current behavior from planned work.
-11. **Finish integration before expanding scope.** If the current phase exposes a bug, fix it before starting the next phase.
-12. **Optimize for maintainability over feature count.** The smallest solution that is secure, understandable, and well integrated is preferred.
-
-## Working With Incremental Patches
-
-This repository includes Makefile helpers for the patch-based workflow used during hardening.
-
-Apply and stage a patch:
-
-```bash
-make patch-apply PATCH=/path/to/change.patch
-```
-
-Export the current tracked changes relative to a base revision:
-
-```bash
-make patch-export PATCH=changes.patch BASE=HEAD
-```
-
-Untracked files are intentionally not exported until they are added to Git.
-
-## Current Development Setup
-
-### Local
+### 1. Create the environment
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 make install-dev
 make env
+```
+
+`make env` copies `.env.example` to `.env` without overwriting an existing file.
+
+Generate a strong application secret:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(48))"
+```
+
+Set at least these values in `.env`:
+
+```env
+APP_ENV=development
+DATABASE_URL=postgres://USER:PASSWORD@localhost:5432/fastapi_starter
+SECRET=replace-with-the-generated-secret
+```
+
+The target database must already exist and be reachable.
+
+### 2. Apply migrations
+
+```bash
 make migrate
+```
+
+### 3. Run the API
+
+```bash
 make dev
 ```
 
-### Docker
+The default endpoints are:
+
+- API: `http://localhost:8000`
+- Swagger UI: `http://localhost:8000/docs`
+- ReDoc: `http://localhost:8000/redoc`
+- OpenAPI document: `http://localhost:8000/openapi.json`
+
+## Docker Workflow
+
+Compose builds and runs only two application services:
+
+1. `migrate` applies pending Aerich migrations and exits;
+2. `api` starts only after `migrate` exits successfully.
+
+Both services use `DATABASE_URL` from `.env`. They use host networking so a database URL containing `localhost` reaches PostgreSQL on the host.
+
+Start the application:
 
 ```bash
 make docker-up
 ```
 
-The Compose workflow uses `DATABASE_URL` from `.env` to connect to an existing PostgreSQL database, runs migrations once, and starts the API only after migrations succeed. PostgreSQL is not managed by this Compose project. Because the default local URL uses `localhost`, the application containers use host networking; ensure the configured database is running and reachable before starting Compose.
+Inspect status and logs:
 
-Use the coordinated restart path when validating an existing database:
+```bash
+make docker-ps
+make docker-logs
+```
+
+Use the coordinated restart command when validating an existing database:
 
 ```bash
 make docker-restart
 ```
 
-This recreates the application containers, reruns pending migrations, and starts the API only after migrations succeed. Raw `docker compose restart` is not the supported workflow because it bypasses Compose startup dependency conditions.
+This recreates the application containers and reruns pending migrations before starting the API. Raw `docker compose restart` is not the supported workflow because it bypasses Compose startup dependency conditions.
 
-### OAuth reference provider
+Stop the application:
 
-OAuth is disabled until a provider is explicitly selected and configured:
+```bash
+make docker-down
+```
+
+`APP_PORT` selects the API port in the host-networked Compose workflow. It defaults to `8000`.
+
+## Configuration
+
+Settings are defined and validated in `app/core/config.py`.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `APP_NAME` | `FastAPI Starter` | OpenAPI and service name |
+| `APP_VERSION` | `1.0.0` | Reported application version |
+| `APP_ENV` | `development` | `development`, `test`, or `production` |
+| `DEBUG` | `false` | Enables local Uvicorn reload and debug logging |
+| `HOST` | `0.0.0.0` | Uvicorn bind host |
+| `PORT` | `8000` | Uvicorn port; must be between 1 and 65535 |
+| `APP_PORT` | `8000` | API port used by Compose |
+| `DATABASE_URL` | local PostgreSQL URL | Tortoise and Aerich database connection |
+| `SECRET` | required | JWT signing secret; minimum 32 characters |
+| `JWT_LIFETIME_SECONDS` | `86400` | JWT lifetime; greater than zero and at most 30 days |
+| `CORS_ORIGINS` | local frontend origins | Comma-separated allowed origins |
+| `CORS_ALLOW_CREDENTIALS` | `true` | Enables credentialed CORS requests |
+| `OAUTH_PROVIDER` | unset | Set to `google` to enable the reference provider |
+| `OAUTH_REDIRECT_URI` | generic local callback | Registered OAuth callback URL |
+| `GOOGLE_CLIENT_ID` | unset | Google OAuth client ID |
+| `GOOGLE_CLIENT_SECRET` | unset | Google OAuth client secret |
+
+### Production validation
+
+When `APP_ENV=production`, startup rejects:
+
+- `DEBUG=true`;
+- known development/test secrets or low-diversity secrets;
+- incomplete OAuth provider credentials;
+- provider credentials without explicit `OAUTH_PROVIDER` selection;
+- non-HTTPS OAuth callback URLs when OAuth is enabled;
+- wildcard CORS origins when credentialed CORS is enabled.
+
+Secrets belong in the deployment environment or a secret manager. Do not commit `.env`.
+
+## Database and Migrations
+
+Aerich migrations are the only schema source of truth. Application startup opens connections but never creates or modifies tables.
+
+Apply pending migrations locally:
+
+```bash
+make migrate
+```
+
+Apply them through the application image:
+
+```bash
+make docker-migrate
+```
+
+After changing a Tortoise model, generate a migration:
+
+```bash
+make migration
+```
+
+Review generated SQL before applying it, especially destructive operations and authorization-related constraints.
+
+Do not run `make init` for a normal checkout. Aerich is already initialized; that target exists only for establishing migration metadata in a new derivative repository.
+
+A clean PostgreSQL database has been validated through the complete migration chain. The final public schema contains only:
+
+- `user`
+- `role`
+- `user_role`
+- `oauthaccount`
+- `aerich`
+
+Historical migrations remain append-only for existing-database compatibility. Forward cleanup migrations remove the former example-domain tables.
+
+## Authentication
+
+### Register
+
+```http
+POST /api/v1/auth/register
+Content-Type: application/json
+```
+
+```json
+{
+  "username": "alice",
+  "email": "alice@example.com",
+  "password": "strong-password"
+}
+```
+
+Registration normalizes email addresses, rejects extra persistence fields, hashes the password with Argon2, and returns `409` for duplicate usernames or emails.
+
+### Password login
+
+```http
+POST /api/v1/auth/login
+Content-Type: application/x-www-form-urlencoded
+```
+
+Send `username` and `password` form fields. A successful response is:
+
+```json
+{
+  "access_token": "<jwt>",
+  "token_type": "bearer"
+}
+```
+
+Use the token on private routes:
+
+```http
+Authorization: Bearer <jwt>
+```
+
+JWTs include issued-at, expiration, subject, and access-token type claims. Missing credentials, invalid credentials, inactive users, and insufficient roles have deterministic status codes and generic responses.
+
+## Roles and First Admin
+
+New users have no roles. After registering the first trusted account, bootstrap it locally:
+
+```bash
+make bootstrap-admin ADMIN_EMAIL=admin@example.com
+```
+
+The command requires an existing active user. It creates the `admin` role when necessary and assigns it idempotently.
+
+Authorization rules include:
+
+- users may read their own account and roles;
+- admins may list users, inspect other users, and manage roles;
+- normal users cannot assign themselves roles;
+- the `admin` role cannot be deleted;
+- removing roles cannot leave the system without an active administrator;
+- malformed user and role identifiers are rejected before reaching the ORM.
+
+## OAuth
+
+OAuth is disabled until a provider is explicitly selected and configured.
 
 ```env
 OAUTH_PROVIDER=google
@@ -283,47 +268,179 @@ GOOGLE_CLIENT_ID=your-google-client-id
 GOOGLE_CLIENT_SECRET=your-google-client-secret
 ```
 
-The generic flow uses `GET /api/v1/auth/oauth/login` and `GET /api/v1/auth/oauth/callback`. The callback links a provider identity to an existing normalized email when possible, creates an OAuth-only user otherwise, rejects inactive users, persists only the provider identity link, and returns a JWT access token. Provider access and refresh tokens are not stored. When configuration is absent, the OAuth endpoints return `503` rather than exposing a partially initialized flow.
+Register the exact redirect URI with Google. Production OAuth callback URLs must use HTTPS.
 
-### Quality checks
+The generic endpoints are:
 
-```bash
-make check
-```
+- `GET /api/v1/auth/oauth/login`
+- `GET /api/v1/auth/oauth/callback`
 
-## Architecture Direction
+The login endpoint creates a random OAuth `state` value, sends it to the provider, and stores it in a short-lived HttpOnly, SameSite cookie. The callback rejects missing or mismatched state before exchanging the authorization code.
 
-The desired final dependency direction is intentionally small:
+After a successful exchange, the core:
+
+1. normalizes the provider identity;
+2. reuses an existing provider/subject link when present;
+3. otherwise links an active local account with the same normalized email;
+4. creates an OAuth-only user when no account exists;
+5. returns the same JWT shape as password login.
+
+Provider access and refresh tokens are intentionally not persisted. They are used only inside the provider adapter to retrieve identity. `oauthaccount` stores the provider name, provider subject, and local user link.
+
+The normal test suite replaces the provider boundary and never calls Google. The Google adapter is the only reference provider; additional providers should be added only for an actual application requirement.
+
+## API Surface
+
+| Method | Path | Access |
+| --- | --- | --- |
+| `GET` | `/` | Public |
+| `POST` | `/api/v1/auth/register` | Public |
+| `POST` | `/api/v1/auth/login` | Public |
+| `GET` | `/api/v1/auth/oauth/login` | Public; configured provider required |
+| `GET` | `/api/v1/auth/oauth/callback` | Public; valid OAuth state required |
+| `GET` | `/api/v1/users/me` | Active user |
+| `GET` | `/api/v1/users/{user_id}` | Self or admin |
+| `GET` | `/api/v1/users/{user_id}/roles` | Self or admin |
+| `POST` | `/api/v1/users/{user_id}/roles/{role_name}` | Admin |
+| `DELETE` | `/api/v1/users/{user_id}/roles/{role_name}` | Admin |
+| `GET` | `/api/v1/roles/` | Admin |
+| `POST` | `/api/v1/roles/` | Admin |
+| `DELETE` | `/api/v1/roles/{role_id}` | Admin |
+| `GET` | `/api/v1/admin/` | Admin |
+
+Private access is the application-wide default. Public operations explicitly opt out through the `@public` marker. Documentation paths are intentionally public.
+
+## Architecture
 
 ```text
 HTTP / FastAPI
       |
+      +-- secure-by-default authentication dependency
+      |
+      +-- password login ------ Argon2 + JWT
+      |
+      +-- OAuth core ---------- provider contract ---------- Google adapter
+      |
+      +-- role authorization
+      |
       v
-Authentication + authorization core
-      |
-      +---- JWT
-      |
-      +---- OAuth provider interface ---- reference provider
-      |
-      v
-Persistence / Tortoise ORM
+Tortoise ORM
       |
       v
 PostgreSQL + Aerich migrations
 ```
 
-Cross-cutting concerns such as configuration, logging, Docker, testing, and CI support this core rather than becoming independent feature systems.
+OAuth provider code normalizes external responses. The provider-neutral service owns local account linking. Models contain persistence rules. FastAPI routes translate core outcomes into HTTP responses.
 
-## Optional Future Extensions
+## Project Structure
 
-Optional infrastructure should live outside the default starter until justified by a real use case. Examples:
+```text
+app/
+├── api/
+│   ├── middlewares.py       # request timing middleware
+│   └── v1/users.py          # authentication, users, roles, and admin routes
+├── core/
+│   ├── config.py            # environment settings and production validation
+│   ├── identifiers.py       # validated API path identifier types
+│   └── security.py          # JWT, password, global auth, and role dependencies
+├── db/tortoise.py           # runtime ORM and Aerich configuration
+├── models/
+│   ├── oauth.py             # provider identity links
+│   └── user.py              # users and roles
+├── oauth/
+│   ├── factory.py           # explicit provider selection
+│   ├── google.py            # Google reference adapter
+│   ├── service.py           # provider-neutral account linking
+│   └── types.py             # provider contract and normalized identity
+└── schemas/user.py          # public request and response models
 
-- Redis when a chosen capability genuinely needs shared ephemeral state, caching, rate limiting, or token/session revocation;
-- a queue or Kafka when a real asynchronous/event-driven workflow requires delivery semantics beyond in-process background work;
-- Prometheus when the project defines operational metrics that are actually useful to monitor.
+migrations/models/           # append-only Aerich migration history
+tests/                       # API, configuration, OAuth, and security regressions
+tools/bootstrap_admin.py     # first-admin bootstrap command
+main.py                      # FastAPI application and lifecycle
+```
 
-These are **extension points, not roadmap requirements**.
+## Security Decisions
 
-## Status
+- Private routes are the global default; public routes require an explicit marker.
+- Invalid bearer tokens are rejected consistently, including when supplied to public routes.
+- Password login performs dummy Argon2 verification for missing and inactive users to reduce username timing disclosure.
+- Inactive users cannot use existing JWT or OAuth identities.
+- Role mutations are transactional and serialize last-admin checks.
+- Authentication errors do not include database or provider internals.
+- JWT lifetime is bounded and centralized.
+- OAuth state is validated without adding a shared session store.
+- Third-party OAuth tokens are not retained because no current capability needs them.
+- Credentialed CORS cannot be combined with wildcard origins.
+- Production configuration rejects common insecure combinations at startup.
+- Optional infrastructure remains absent until a concrete feature requires it.
 
-The project is currently in the hardening/refactoring stage. Phases 1–9 are implemented; Phase 10 is the next engineering phase. The repository should not be presented as a finished generic starter until the readiness definition is satisfied.
+## Tests and CI
+
+Run all local quality checks:
+
+```bash
+make check
+```
+
+Or run them separately:
+
+```bash
+make lint
+make test
+```
+
+The API suite uses a disposable SQLite database for fast, isolated behavior tests. Migration behavior is validated separately against PostgreSQL.
+
+GitHub Actions runs on pushes and pull requests. CI:
+
+1. starts PostgreSQL 16;
+2. installs development dependencies;
+3. runs Ruff;
+4. applies the complete Aerich migration history to PostgreSQL;
+5. runs the Pytest suite.
+
+Normal tests do not require third-party network access or OAuth credentials.
+
+## Common Commands
+
+| Command | Purpose |
+| --- | --- |
+| `make env` | Create `.env` from `.env.example` if absent |
+| `make install` | Install runtime dependencies |
+| `make install-dev` | Install development and test dependencies |
+| `make run` | Run without reload |
+| `make dev` | Run with debug reload |
+| `make migrate` | Apply pending Aerich migrations |
+| `make migration` | Generate a migration from model changes |
+| `make bootstrap-admin ADMIN_EMAIL=...` | Assign the first admin role |
+| `make docker-up` | Build and start migrations/API |
+| `make docker-restart` | Coordinated migration-aware restart |
+| `make docker-down` | Stop application containers |
+| `make docker-logs` | Follow API logs |
+| `make check` | Run Ruff and Pytest |
+| `make clean` | Remove Python and test caches |
+
+Patch-oriented maintenance helpers remain available through `make patch-apply` and `make patch-export`.
+
+## Extending the Starter
+
+- Add business models, schemas, migrations, and routers in the derivative application, not in the reusable starter core.
+- Keep migration history append-only once a database has been shared.
+- Add an OAuth provider by implementing `OAuthProvider`; do not duplicate account-linking logic.
+- Add infrastructure only when a selected capability requires it.
+- Preserve private-by-default routing and add regression tests for security behavior.
+- Avoid abstractions that do not isolate a real boundary or reduce meaningful duplication.
+
+## Maintenance Roadmap
+
+The original hardening roadmap is complete. Ongoing maintenance should remain small and evidence-driven:
+
+- perform a deployment-specific live Google OAuth smoke test when credentials are available;
+- update pinned dependencies deliberately and address upstream deprecation warnings;
+- select a license and create a tagged release when repository ownership chooses the release terms;
+- add infrastructure or another OAuth provider only for a concrete application requirement.
+
+## License
+
+No license has been selected. Add the chosen license before publishing or redistributing the repository as an open-source project.

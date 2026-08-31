@@ -20,6 +20,7 @@ class FakeGoogleClient:
 
     async def get_authorization_url(self, redirect_uri: str, **kwargs: object) -> str:
         self.authorization_redirect_uri = redirect_uri
+        assert kwargs["state"] == "oauth-state"
         return "https://accounts.example/authorize"
 
     async def get_access_token(
@@ -45,11 +46,11 @@ class FakeOAuthProvider:
     def __init__(self, subject: str = "subject-1", email: str = "oauth@example.com") -> None:
         self.subject = subject
         self.email = email
-        self.authorization_calls: list[str] = []
+        self.authorization_calls: list[tuple[str, str]] = []
         self.exchange_calls: list[tuple[str, str]] = []
 
-    async def authorization_url(self, redirect_uri: str) -> str:
-        self.authorization_calls.append(redirect_uri)
+    async def authorization_url(self, redirect_uri: str, state: str) -> str:
+        self.authorization_calls.append((redirect_uri, state))
         return "https://provider.example/authorize"
 
     async def exchange_code(self, code: str, redirect_uri: str) -> OAuthIdentity:
@@ -63,6 +64,20 @@ def _override_provider(provider: FakeOAuthProvider) -> None:
 
 def _clear_provider_override() -> None:
     app.dependency_overrides.pop(require_oauth_provider, None)
+
+
+def _complete_oauth_callback(
+    client: TestClient,
+    provider: FakeOAuthProvider,
+    code: str,
+):
+    login = client.get("/api/v1/auth/oauth/login", follow_redirects=False)
+    assert login.status_code == 307, login.text
+    state = provider.authorization_calls[-1][1]
+    return client.get(
+        "/api/v1/auth/oauth/callback",
+        params={"code": code, "state": state},
+    )
 
 
 async def _oauth_snapshot(provider: str, subject: str) -> tuple[int, int]:
@@ -92,7 +107,10 @@ def test_google_provider_normalizes_the_external_boundary():
     provider = GoogleOAuthProvider("client-id", "client-secret", client=fake_client)
 
     async def scenario():
-        authorization_url = await provider.authorization_url("https://api.example/oauth/callback")
+        authorization_url = await provider.authorization_url(
+            "https://api.example/oauth/callback",
+            "oauth-state",
+        )
         authentication = await provider.exchange_code(
             "authorization-code",
             "https://api.example/oauth/callback",
@@ -117,7 +135,10 @@ def test_generic_oauth_routes_report_unconfigured_provider(client, monkeypatch):
     monkeypatch.setattr(oauth_factory, "get_configured_oauth_provider", lambda: None)
 
     login = client.get("/api/v1/auth/oauth/login")
-    callback = client.get("/api/v1/auth/oauth/callback", params={"code": "code"})
+    callback = client.get(
+        "/api/v1/auth/oauth/callback",
+        params={"code": "code", "state": "state"},
+    )
 
     for response in (login, callback):
         assert response.status_code == 503
@@ -134,9 +155,31 @@ def test_generic_oauth_login_delegates_authorization_url(client):
 
     assert response.status_code == 307
     assert response.headers["location"] == "https://provider.example/authorize"
-    assert provider.authorization_calls == [
-        "http://localhost:8000/api/v1/auth/oauth/callback"
-    ]
+    assert len(provider.authorization_calls) == 1
+    redirect_uri, state = provider.authorization_calls[0]
+    assert redirect_uri == "http://localhost:8000/api/v1/auth/oauth/callback"
+    assert state
+    assert "oauth_state=" in response.headers["set-cookie"]
+    assert "HttpOnly" in response.headers["set-cookie"]
+    assert "SameSite=lax" in response.headers["set-cookie"]
+
+
+def test_oauth_callback_rejects_invalid_state(client):
+    provider = FakeOAuthProvider()
+    _override_provider(provider)
+    try:
+        login = client.get("/api/v1/auth/oauth/login", follow_redirects=False)
+        assert login.status_code == 307, login.text
+        callback = client.get(
+            "/api/v1/auth/oauth/callback",
+            params={"code": "code", "state": "invalid-state"},
+        )
+    finally:
+        _clear_provider_override()
+
+    assert callback.status_code == 400
+    assert callback.json() == {"detail": "Invalid OAuth state"}
+    assert provider.exchange_calls == []
 
 
 def test_oauth_callback_creates_and_reuses_account_with_jwt_login(fresh_database):
@@ -144,10 +187,7 @@ def test_oauth_callback_creates_and_reuses_account_with_jwt_login(fresh_database
     _override_provider(provider)
     try:
         with TestClient(app) as client:
-            first_callback = client.get(
-                "/api/v1/auth/oauth/callback",
-                params={"code": "first-code"},
-            )
+            first_callback = _complete_oauth_callback(client, provider, "first-code")
             assert first_callback.status_code == 200, first_callback.text
             first_headers = {
                 "Authorization": f"Bearer {first_callback.json()['access_token']}"
@@ -156,10 +196,7 @@ def test_oauth_callback_creates_and_reuses_account_with_jwt_login(fresh_database
             assert first_user.status_code == 200, first_user.text
             assert first_user.json()["email"] == "oauth@example.com"
 
-            second_callback = client.get(
-                "/api/v1/auth/oauth/callback",
-                params={"code": "second-code"},
-            )
+            second_callback = _complete_oauth_callback(client, provider, "second-code")
             assert second_callback.status_code == 200, second_callback.text
             second_headers = {
                 "Authorization": f"Bearer {second_callback.json()['access_token']}"
@@ -189,10 +226,7 @@ def test_oauth_callback_links_an_existing_user_by_normalized_email(fresh_databas
             )
             assert registered.status_code == 201, registered.text
 
-            callback = client.get(
-                "/api/v1/auth/oauth/callback",
-                params={"code": "link-code"},
-            )
+            callback = _complete_oauth_callback(client, provider, "link-code")
             assert callback.status_code == 200, callback.text
             headers = {"Authorization": f"Bearer {callback.json()['access_token']}"}
             linked_user = client.get("/api/v1/users/me", headers=headers)
@@ -212,10 +246,7 @@ def test_oauth_callback_rejects_inactive_linked_user(fresh_database):
     _override_provider(provider)
     try:
         with TestClient(app) as client:
-            callback = client.get(
-                "/api/v1/auth/oauth/callback",
-                params={"code": "inactive-code"},
-            )
+            callback = _complete_oauth_callback(client, provider, "inactive-code")
     finally:
         _clear_provider_override()
 

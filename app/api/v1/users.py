@@ -1,4 +1,7 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+import secrets
+from hmac import compare_digest
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import RedirectResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from tortoise.contrib.pydantic import pydantic_model_creator
@@ -23,6 +26,8 @@ from app.oauth.types import OAuthProvider, OAuthProviderError
 from app.schemas.user import RoleCreate, RoleOut, UserCreateExtra, UserOut, UserRead
 
 settings = get_settings()
+OAUTH_STATE_COOKIE = "oauth_state"
+OAUTH_STATE_MAX_AGE_SECONDS = 10 * 60
 
 
 # ----- Role schemas ----------------------------------------------------------
@@ -76,22 +81,48 @@ async def register(payload: UserCreateExtra):
 @_auth.get("/oauth/login")
 @public
 async def oauth_login(provider: OAuthProvider = Depends(require_oauth_provider)):
+    state_token = secrets.token_urlsafe(32)
     try:
-        redirect_url = await provider.authorization_url(settings.oauth_redirect_uri)
+        redirect_url = await provider.authorization_url(
+            settings.oauth_redirect_uri,
+            state_token,
+        )
     except OAuthProviderError as exc:
         raise HTTPException(
             status_code=status.HTTP_502_BAD_GATEWAY,
             detail="OAuth provider is unavailable",
         ) from exc
-    return RedirectResponse(redirect_url)
+
+    response = RedirectResponse(redirect_url)
+    response.set_cookie(
+        OAUTH_STATE_COOKIE,
+        state_token,
+        max_age=OAUTH_STATE_MAX_AGE_SECONDS,
+        httponly=True,
+        secure=settings.app_env == "production",
+        samesite="lax",
+        path="/api/v1/auth/oauth",
+    )
+    return response
 
 
 @_auth.get("/oauth/callback")
 @public
 async def oauth_callback(
     code: str,
+    state: str,
+    request: Request,
+    response: Response,
     provider: OAuthProvider = Depends(require_oauth_provider),
 ):
+    expected_state = request.cookies.get(OAUTH_STATE_COOKIE)
+    if expected_state is None or not compare_digest(expected_state, state):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid OAuth state",
+        )
+    response.delete_cookie(OAUTH_STATE_COOKIE, path="/api/v1/auth/oauth")
+
     try:
         user = await authenticate_oauth_user(provider, code, settings.oauth_redirect_uri)
     except InactiveOAuthUserError as exc:
